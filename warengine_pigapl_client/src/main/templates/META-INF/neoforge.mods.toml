@@ -1,0 +1,37 @@
+modLoader="javafml" #mandatory
+loaderVersion="${loader_version_range}" #mandatory
+license="${mod_license}"
+
+[[mods]] #mandatory
+modId="${mod_id_client}" #mandatory
+version="${mod_version}" #mandatory
+displayName="${mod_name_client}" #mandatory
+authors="pigapl"
+
+description='''
+Client-only addon for War Engine: UI/HUD for kit and team selection. Talks to the
+warengine_pigapl base mod, which must also be installed on the player's client.
+'''
+
+[[dependencies.${mod_id_client}]] #mandatory
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="CLIENT"
+
+[[dependencies.${mod_id_client}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="CLIENT"
+
+# The base mod: this addon is pure UI on top of it, so load after it and require it.
+[[dependencies.${mod_id_client}]]
+    modId="${mod_id}"
+    type="required"
+    reason="Client UI reads/drives state exposed by the base mod (kit id, team, etc.)."
+    versionRange="[${mod_version},)"
+    ordering="AFTER"
+    side="CLIENT"

@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'warengine_pigapl'
+
+// Client-side addon: standard NeoForge pattern of a sibling mod (own modid, own
+// neoforge.mods.toml, @Mod(dist = Dist.CLIENT)) that depends on this project for
+// shared classes. Keeps the base mod's install requirement (dedicated servers only
+// need the root project's jar) separate from anything client-only (UI/HUD).
+include 'warengine_pigapl_client'

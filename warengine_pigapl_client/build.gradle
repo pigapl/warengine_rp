@@ -1,0 +1,117 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.144'
+    id 'idea'
+}
+
+version = mod_version
+group = mod_group_id
+
+sourceSets.main.resources {
+    srcDir('src/generated/resources')
+    exclude("**/*.bbmodel") // BlockBench project files
+    exclude("src/generated/**/.cache") // datagen cache files
+}
+
+base {
+    archivesName = mod_id_client
+}
+
+// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    // These are THE client runs to use - they load both mods. The root project's runClient loads
+    // only the base mod (its mods block can't see this subproject's classes), so a client started
+    // from there silently has no UI at all: no keybind, no screens, nothing.
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id_client
+        }
+
+        // Second client for two-player testing (one op, one not) - needs its own username, since
+        // dev clients are all "Dev" by default and the server kicks the duplicate login.
+        client2 {
+            client()
+            gameDirectory = project.file('run-client2')
+            programArguments.addAll '--username', 'Dev2'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id_client
+        }
+
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    // Both mods must be declared, or FML only loads the one it was told about. The base mod's
+    // classes are already on this project's runtime classpath via the project(':') dependency
+    // below; this is what actually registers them as a loaded mod in these runs.
+    mods {
+        "${mod_id}" {
+            sourceSet(project(':').sourceSets.main)
+        }
+        "${mod_id_client}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+// Same 'localRuntime' setup as the root project - see the comment there.
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+dependencies {
+    // Shared classes (WarState accessors, network payloads) live in the base mod.
+    // The base mod must also be present client-side at runtime for this addon to work.
+    implementation project(':')
+
+    // The pack mods, from the root project's shared list. These CANNOT arrive through
+    // project(':') - the base mod declares them as localRuntime, which by design is not exposed
+    // to dependent projects. Without them these client runs load a different mod set than the
+    // server and the connection is refused on channel mismatch (e.g. "tacz:... missing on server").
+    localRuntime rootProject.ext.eventModJars
+}
+
+// Same templating approach as the root project: expand ${...} placeholders from
+// gradle.properties into src/main/templates, output alongside the base mod's own
+// generateModMetadata task under this subproject's own build directory.
+var generateModMetadataClient = tasks.register("generateModMetadataClient", ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_id_client          : mod_id_client,
+            mod_name_client        : mod_name_client,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+sourceSets.main.resources.srcDir generateModMetadataClient
+neoForge.ideSyncTask generateModMetadataClient
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
