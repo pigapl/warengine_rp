@@ -33,6 +33,8 @@ public final class CapturePointHud implements LayeredDraw.Layer {
     private static final int NEUTRAL = 0xFF6E6E6E;
     private static final int TRACK = 0x80000000;
     private static final int OUTLINE = 0xFF000000;
+    private static final int OWN_OUTLINE = 0xFFFFFFFF;
+    private static final int OWN_LABEL_MAX = 10;
     private static final int CONTESTED = 0xFFFFD24A;
     private static final int TEXT = 0xFFFFFFFF;
 
@@ -163,18 +165,18 @@ public final class CapturePointHud implements LayeredDraw.Layer {
 
         int y = top;
         for (TeamTicketEntry entry : mine) {
-            drawTicketBar(graphics, mc, entry, centreX - inner, y, true, bars, counts, rate, eta);
+            drawTicketBar(graphics, mc, entry, centreX - inner, y, true, true, bars, counts, rate, eta);
             y += TICKET_BAR_H + TICKET_BAR_GAP + (rate || eta ? 10 : 0);
         }
         y = top;
         for (TeamTicketEntry entry : theirs) {
-            drawTicketBar(graphics, mc, entry, centreX + inner, y, false, bars, counts, rate, eta);
+            drawTicketBar(graphics, mc, entry, centreX + inner, y, false, false, bars, counts, rate, eta);
             y += TICKET_BAR_H + TICKET_BAR_GAP + (rate || eta ? 10 : 0);
         }
     }
 
     private void drawTicketBar(GuiGraphics graphics, Minecraft mc, TeamTicketEntry entry, int innerX,
-                               int y, boolean leftward, boolean bars, boolean counts,
+                               int y, boolean leftward, boolean own, boolean bars, boolean counts,
                                boolean showRate, boolean showEta) {
         int cap = Math.max(1, ClientCapturePointCache.ticketCap());
         int color = teamColor(mc, entry.team(), NEUTRAL);
@@ -190,12 +192,14 @@ public final class CapturePointHud implements LayeredDraw.Layer {
                 int fillLeft = leftward ? innerX - fill : innerX;
                 graphics.fill(fillLeft, y, fillLeft + fill, y + TICKET_BAR_H, color);
             }
-            graphics.renderOutline(trackLeft, y, TICKET_BAR_W, TICKET_BAR_H, OUTLINE);
+            graphics.renderOutline(trackLeft, y, TICKET_BAR_W, TICKET_BAR_H,
+                    own ? OWN_OUTLINE : OUTLINE);
         }
 
         int textX = bars ? outerX : innerX;
         if (counts) {
-            String n = Integer.toString(entry.tickets());
+            String n = own ? teamLabel(mc, entry.team()) + " " + entry.tickets()
+                    : Integer.toString(entry.tickets());
             int w = mc.font.width(n);
             graphics.drawString(mc.font, n, leftward ? textX - w - 3 : textX + 3,
                     y - 1, color, true);
@@ -224,6 +228,19 @@ public final class CapturePointHud implements LayeredDraw.Layer {
         int lineW = mc.font.width(line);
         int lineX = leftward ? Math.min(innerX, outerX) : Math.max(innerX, outerX) - lineW;
         graphics.drawString(mc.font, line, lineX, y + TICKET_BAR_H + 2, color, true);
+    }
+
+    /** Short display name for the player's own team, so the HUD says WHICH team is theirs. */
+    private static String teamLabel(Minecraft mc, String teamName) {
+        String label = teamName;
+        if (mc.level != null) {
+            PlayerTeam team = mc.level.getScoreboard().getPlayerTeam(teamName);
+            if (team != null) {
+                label = team.getDisplayName().getString();
+            }
+        }
+        label = label.toUpperCase(Locale.ROOT);
+        return label.length() > OWN_LABEL_MAX ? label.substring(0, OWN_LABEL_MAX) : label;
     }
 
     private static String mmss(long seconds) {

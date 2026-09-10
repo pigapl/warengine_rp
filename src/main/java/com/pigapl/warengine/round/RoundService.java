@@ -2,6 +2,7 @@ package com.pigapl.warengine.round;
 
 import com.pigapl.warengine.WarConfig;
 import com.pigapl.warengine.WarEngine;
+import com.pigapl.warengine.network.CapturePointLoc;
 import com.pigapl.warengine.network.CapturePointStatus;
 import com.pigapl.warengine.network.ClientboundCapturePointsPayload;
 import com.pigapl.warengine.network.TeamTicketEntry;
@@ -251,10 +252,12 @@ public final class RoundService {
     private static ClientboundCapturePointsPayload buildPointsPayload(MinecraftServer server, WarState st) {
         int captureTotal = WarConfig.CAPTURE_SECONDS.get();
         List<CapturePointStatus> points = new ArrayList<>();
+        List<CapturePointLoc> locations = new ArrayList<>();
         for (CapturePoint p : st.points()) {
             boolean contested = st.roundActive() && occupantsByTeam(server, p).size() >= 2;
             points.add(new CapturePointStatus(p.id, orEmpty(p.owner), orEmpty(p.capturingTeam),
                     p.progress, captureTotal, contested));
+            locations.add(new CapturePointLoc(p.id, p.dim, p.x, p.y, p.z, (int) Math.round(p.radius)));
         }
         List<TeamTicketEntry> tickets = new ArrayList<>();
         st.tickets().forEach((team, n) -> tickets.add(new TeamTicketEntry(team, n)));
@@ -262,8 +265,8 @@ public final class RoundService {
         long left = st.roundActive()
                 ? Math.max(0L, (st.roundEndEpochMillis() - System.currentTimeMillis()) / 1000L) * 1000L
                 : 0L;
-        return new ClientboundCapturePointsPayload(points, tickets, WarConfig.ROUND_TICKET_CAP.get(),
-                st.roundActive(), left);
+        return new ClientboundCapturePointsPayload(points, locations, tickets,
+                WarConfig.ROUND_TICKET_CAP.get(), st.roundActive(), left);
     }
 
     private static String orEmpty(String s) {

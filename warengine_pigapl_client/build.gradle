@@ -79,6 +79,9 @@ dependencies {
     // project(':') - the base mod declares them as localRuntime, which by design is not exposed
     // to dependent projects. Without them these client runs load a different mod set than the
     // server and the connection is refused on channel mismatch (e.g. "tacz:... missing on server").
+    // compileOnly for the Xaero's World Map hook; guarded by a ModList check so the addon still
+    // loads without it.
+    compileOnly rootProject.ext.eventModJars
     localRuntime rootProject.ext.eventModJars
 }
 

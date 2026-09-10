@@ -1,5 +1,6 @@
 package com.pigapl.warengine.network.client;
 
+import com.pigapl.warengine.network.CapturePointLoc;
 import com.pigapl.warengine.network.CapturePointStatus;
 import com.pigapl.warengine.network.ClientboundCapturePointsPayload;
 import com.pigapl.warengine.network.TeamTicketEntry;
@@ -13,6 +14,7 @@ import java.util.List;
 public final class ClientCapturePointCache {
 
     private static volatile List<CapturePointStatus> points = List.of();
+    private static volatile List<CapturePointLoc> locations = List.of();
     private static volatile List<TeamTicketEntry> tickets = List.of();
     private static volatile int ticketCap = 0;
     private static volatile boolean warActive = false;
@@ -23,6 +25,10 @@ public final class ClientCapturePointCache {
 
     public static List<CapturePointStatus> points() {
         return points;
+    }
+
+    public static List<CapturePointLoc> locations() {
+        return locations;
     }
 
     public static List<TeamTicketEntry> tickets() {
@@ -47,6 +53,7 @@ public final class ClientCapturePointCache {
 
     static void set(ClientboundCapturePointsPayload payload) {
         points = payload.points();
+        locations = payload.locations();
         tickets = payload.tickets();
         ticketCap = payload.ticketCap();
         warActive = payload.warActive();
