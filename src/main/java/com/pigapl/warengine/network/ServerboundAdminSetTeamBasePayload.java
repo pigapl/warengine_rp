@@ -7,11 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/**
- * Admin panel's per-team "Base" button: sets that team's base to the ADMIN'S current position and
- * facing. No coordinates travel on the wire - the server reads them off the sender, so a modified
- * client cannot place a base somewhere it isn't standing.
- */
+/** No coordinates on the wire - the server reads the position off the sender. */
 public record ServerboundAdminSetTeamBasePayload(String team) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminSetTeamBasePayload> TYPE =

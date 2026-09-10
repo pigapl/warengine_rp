@@ -36,7 +36,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Game-bus event handlers for the kit and team modules. */
 @EventBusSubscriber(modid = WarEngine.MODID)
 public final class GameEvents {
 
@@ -46,7 +45,6 @@ public final class GameEvents {
     // its loading screen is discarded (same bug as KitService's "+4 tick warm-up").
     private static final Map<UUID, Long> PENDING_TEAM_LOGIN_NAG = new ConcurrentHashMap<>();
 
-    /** Last team we saw each online player on, for detecting membership changes - see {@link #onTeamChangeTick}. */
     private static final Map<UUID, String> LAST_KNOWN_TEAM = new ConcurrentHashMap<>();
 
     private static final String NO_TEAM = "";
@@ -57,7 +55,6 @@ public final class GameEvents {
         WarCommand.register(event.getDispatcher());
         SquadCommand.register(event.getDispatcher());
         WarStateCommand.register(event.getDispatcher());
-        // No custom team command: teams are vanilla scoreboard teams, joined with /team join <id>.
     }
 
     @SubscribeEvent
@@ -69,7 +66,6 @@ public final class GameEvents {
         onTeamChangeTick(event.getServer());
     }
 
-    /** A player death docks their team a reinforcement ticket while a war is running. */
     @SubscribeEvent
     public static void onLivingDeath(net.neoforged.neoforge.event.entity.living.LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
@@ -78,21 +74,14 @@ public final class GameEvents {
     }
 
     /**
-     * Reacts to a team change by ANY route - our SelectTeam payload, vanilla {@code /team join|leave},
-     * an admin move, or {@code /kit teams remove}. POLLED once a second, not hooked: scoreboard team
-     * membership has no event and we do not control every path that changes it.
-     *
-     * <p>On a change the old kit is dropped (else respawn reconcile re-issues the old team's loadout),
-     * the old squad is vacated (a squad belongs to one team), and both teams' catalogs and squad lists
-     * are resent so everyone's counts are right.</p>
+     * Catches a team change by ANY route. POLLED once a second, not hooked: scoreboard membership has
+     * no event and we do not control every path that changes it.
      */
     private static void onTeamChangeTick(MinecraftServer server) {
         if (server.getTickCount() % 20 != 0) {
             return;
         }
-        // Collected and broadcast once at the end, not per player: a mass reassign moves everyone at
-        // once, and per-player broadcasts would be quadratic (30 players x 2 teams x ~15 recipients
-        // of a ~30KB catalog each).
+        // Broadcast once at the end, not per player - a mass reassign would otherwise be quadratic.
         Set<String> affectedTeams = null;
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -176,7 +165,6 @@ public final class GameEvents {
         }
     }
 
-    /** Periodic actionbar reminder for players who still have no team (issue #11). */
     private static void onTeamNagTick(MinecraftServer server) {
         int interval = WarConfig.TEAM_NAG_INTERVAL_SECONDS.get();
         if (interval <= 0) {
@@ -188,7 +176,7 @@ public final class GameEvents {
         }
         List<String> teamIds = TeamService.ids(server);
         if (teamIds.isEmpty()) {
-            return; // nothing created yet - don't nag players to join a team that doesn't exist
+            return;
         }
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (TeamService.getTeam(server, player) == null) {
@@ -218,6 +206,9 @@ public final class GameEvents {
         }
         KitNetworking.sendKitState(player);
         SquadNetworking.sendSquadState(player);
+        // The HUD feed is push-on-change, so a joining player needs one unconditional send to start
+        // from - before the team check, since the points HUD is not gated on having a team.
+        RoundService.sendPointsTo(player);
         if (TeamService.getTeam(player.server, player) == null) {
             PENDING_TEAM_LOGIN_NAG.put(player.getUUID(), player.server.getTickCount() + 20L);
             return;
@@ -229,10 +220,8 @@ public final class GameEvents {
     }
 
     /**
-     * Frees the leaving player's kit slot in everyone else's view - limits count online players only,
-     * so a disconnect really does open one, and squad-mates' menus would otherwise stay greyed out.
-     * Squad-scoped, since only a squad-mate leaving changes anyone's numbers. Squad MEMBERSHIP is
-     * untouched by logging out, so no squad list is resent.
+     * Frees the leaver's kit slot in everyone else's view - limits count online players only. Squad
+     * MEMBERSHIP is untouched by logging out, so no squad list is resent.
      */
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {

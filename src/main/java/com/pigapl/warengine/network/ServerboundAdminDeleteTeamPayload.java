@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's Delete Team button - calls {@code TeamKits#removeTeam}. */
 public record ServerboundAdminDeleteTeamPayload(String id) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminDeleteTeamPayload> TYPE =

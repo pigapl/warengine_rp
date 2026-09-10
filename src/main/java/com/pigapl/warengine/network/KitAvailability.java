@@ -7,9 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 /**
  * Slot availability for one kit on the receiving player's team. Split out of
  * {@link KitCatalogEntry} because StreamCodec.composite tops out at 6 field/getter pairs.
- *
- * @param limit max holders per squad, {@code <= 0} meaning unlimited
- * @param taken how many players in the receiving player's squad currently hold it
  */
 public record KitAvailability(int limit, int taken) {
 

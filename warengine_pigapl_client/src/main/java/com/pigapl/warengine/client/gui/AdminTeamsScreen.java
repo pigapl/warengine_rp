@@ -32,14 +32,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Team + squad oversight: every team (color, roster, create/delete/recolor, base) and every squad
- * (full roster including offline members, plus per-member teleport/force-kit/resupply/kick).
- *
- * <p>Reached from {@link AdminScreen}'s "Teams &amp; Squads". Same polling design - the server has no
- * idea this screen is open. Also polls the kit library, so the per-member "Kit" action already has a
- * populated list when clicked.</p>
- */
 public final class AdminTeamsScreen extends Screen {
 
     private static final int POLL_INTERVAL_TICKS = 20;
@@ -117,8 +109,6 @@ public final class AdminTeamsScreen extends Screen {
         forEachVisibleTeamRow(teams, teamsTop + 16, teamsBottom, (y, team, member) -> {
             if (member == null) {
                 int bx = teamHeaderButtonsX();
-                // "Base" sets it to where the ADMIN is standing (the server reads the position off the
-                // sender), so walk there first. "B>" teleports you to it; "Clr" removes it.
                 addRenderableWidget(Button.builder(Component.literal("Base"),
                                 b -> PacketDistributor.sendToServer(new ServerboundAdminSetTeamBasePayload(team.team())))
                         .bounds(bx, y - 1, 36, ROW_HEIGHT - 2).build());
@@ -175,9 +165,7 @@ public final class AdminTeamsScreen extends Screen {
         });
     }
 
-    // Button-group start X per row kind, called from BOTH init() (placement) and the draw* methods
-    // (dotted-line end), so the two can never disagree about where a row's buttons begin.
-    /** Base(36) + B&gt;(22) + Clr(26) with 2px gaps, then Color(44) and Del(44) pinned to the right edge. */
+    // Called from BOTH init() (placement) and the draw* methods (dotted-line end) - never disagree.
     private int teamHeaderButtonsX() {
         return right - 90 - 2 - (36 + 2 + 22 + 2 + 26);
     }
@@ -220,7 +208,6 @@ public final class AdminTeamsScreen extends Screen {
                 this));
     }
 
-    /** Next color name after the one matching {@code currentArgb} in {@link #COLOR_CYCLE}, wrapping around. */
     private static String nextColor(int currentArgb) {
         int idx = -1;
         for (int i = 0; i < COLOR_CYCLE.length; i++) {
@@ -238,11 +225,6 @@ public final class AdminTeamsScreen extends Screen {
         return rgb == null ? 0xFF8A8A96 : (0xFF000000 | rgb);
     }
 
-    /**
-     * Panel height for the teams block, so the squads panel below never overlaps (capped; scroll
-     * handles the rest). Must include the 16px heading the rows start below - omitting it bled the
-     * teams panel into the squads panel with as few as 3 teams x 2 players.
-     */
     private int estimateTeamsHeight() {
         ClientboundAdminTeamsSnapshotPayload snap = ClientAdminCache.teamsSnapshot();
         if (snap == null || snap.teams().isEmpty()) {
@@ -367,7 +349,6 @@ public final class AdminTeamsScreen extends Screen {
         graphics.disableScissor();
     }
 
-    /** Small dashed connector from where a row's text ends to where its action buttons begin. */
     private void drawDottedLine(GuiGraphics graphics, int x1, int x2, int y, int color) {
         for (int x = x1 + 2; x < x2 - 2; x += 4) {
             graphics.fill(x, y, Math.min(x + 2, x2 - 2), y + 1, color);
@@ -380,25 +361,17 @@ public final class AdminTeamsScreen extends Screen {
         graphics.drawString(font, heading, left + 6, top + 4, 0xFFFFFFFF);
     }
 
-    // ------------------------------------------------------------------ row layout
 
     @FunctionalInterface
     private interface TeamRowVisitor {
-        /** {@code member == null} marks a team's header row. */
         void visit(int y, AdminTeamDetail team, AdminPlayerInfo member);
     }
 
     @FunctionalInterface
     private interface SquadRowVisitor {
-        /** {@code member == null} marks a squad's header row. */
         void visit(int y, AdminSquadDetail squad, AdminPlayerInfo member);
     }
 
-    /**
-     * Flattens every team into (header row + one row per ONLINE member), applies {@link #teamsScroll},
-     * and visits only rows that fit. Used by BOTH {@link #init} (button placement) and
-     * {@link #drawTeamsPanel} (text), so the two can never disagree on where a row is.
-     */
     private void forEachVisibleTeamRow(List<AdminTeamDetail> teams, int top, int bottom, TeamRowVisitor visitor) {
         int rowIndex = 0;
         int y = top;
@@ -424,7 +397,6 @@ public final class AdminTeamsScreen extends Screen {
         }
     }
 
-    /** Same idea as {@link #forEachVisibleTeamRow}, for squads (full roster, online or not). */
     private void forEachVisibleSquadRow(List<AdminSquadDetail> squads, int top, int bottom, SquadRowVisitor visitor) {
         int rowIndex = 0;
         int y = top;

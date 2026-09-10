@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client asks to equip a kit - the payload equivalent of {@code /kit <id>}. Same validation path. */
 public record ServerboundSelectKitPayload(String kitId) implements CustomPacketPayload {
 
     public static final Type<ServerboundSelectKitPayload> TYPE =

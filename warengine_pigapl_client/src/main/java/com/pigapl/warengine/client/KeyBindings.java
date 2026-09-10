@@ -5,7 +5,6 @@ import net.minecraft.client.KeyMapping;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import org.lwjgl.glfw.GLFW;
 
-/** Manual reopen for the team/kit menu, in case a player closes the auto-opened screen. */
 public final class KeyBindings {
 
     public static final KeyMapping OPEN_MENU = new KeyMapping(
@@ -15,9 +14,17 @@ public final class KeyBindings {
             "key.categories.warengine_pigapl_client"
     );
 
+    public static final KeyMapping HUD_OPTIONS = new KeyMapping(
+            "key.warengine_pigapl_client.hud_options",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_J,
+            "key.categories.warengine_pigapl_client"
+    );
+
     private KeyBindings() {}
 
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(OPEN_MENU);
+        event.register(HUD_OPTIONS);
     }
 }

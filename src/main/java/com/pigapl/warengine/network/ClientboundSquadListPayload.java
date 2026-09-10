@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/** The caller's current team's squads, sent whenever team membership or squad rosters change. */
 public record ClientboundSquadListPayload(List<SquadEntry> squads) implements CustomPacketPayload {
 
     public static final Type<ClientboundSquadListPayload> TYPE =

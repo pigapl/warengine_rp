@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's "Reset Tickets" button - rezeroes every team's tickets without ending the war. */
 public record ServerboundAdminResetTicketsPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminResetTicketsPayload> TYPE =

@@ -13,21 +13,18 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.Set;
 
 /**
- * Team bases: one saved position per team, driving respawn, "TP all to bases", and where a player may
- * pick a kit ({@link #withinKitRange}). A team with no base is completely unrestricted - that is the
- * feature's off switch. Stored in {@link WarState} (per-world, like the capture zone), not the
- * per-server config: last map's coordinates are meaningless on a fresh one.
+ * One saved position per team, driving respawn, TP-all, and where a kit may be picked. A team with no
+ * base is completely unrestricted - that is the off switch. Per-WORLD, in {@link WarState}: last
+ * map's coordinates are meaningless on a fresh one.
  */
 public final class BaseService {
 
     private BaseService() {}
 
-    /** {@code null} if the team has no base (or is {@code null} itself). */
     public static WarState.TeamBase of(MinecraftServer server, String team) {
         return team == null ? null : WarState.get(server).getBase(team);
     }
 
-    /** Records {@code team}'s base at {@code at}'s current position and facing. */
     public static void set(MinecraftServer server, String team, ServerPlayer at) {
         WarState.get(server).setBase(team, at.level().dimension().location().toString(),
                 at.getX(), at.getY(), at.getZ(), at.getYRot());
@@ -37,10 +34,7 @@ public final class BaseService {
         return WarState.get(server).clearBase(team);
     }
 
-    /**
-     * Whether {@code player} is close enough to {@code team}'s base to pick a kit. True when the team
-     * has no base, or the radius is configured to 0 - the restriction is opt-in by setting a base.
-     */
+    /** True when the team has no base or the radius is 0 - the restriction is opt-in. */
     public static boolean withinKitRange(ServerPlayer player, String team) {
         WarState.TeamBase base = of(player.server, team);
         if (base == null) {
@@ -56,7 +50,6 @@ public final class BaseService {
         return player.distanceToSqr(base.x, base.y, base.z) <= radius * radius;
     }
 
-    /** Blocks from {@code player} to their team's base, or {@code -1} if there is none / another dimension. */
     public static double distanceTo(ServerPlayer player, String team) {
         WarState.TeamBase base = of(player.server, team);
         if (base == null || !player.level().dimension().location().toString().equals(base.dim)) {
@@ -65,7 +58,6 @@ public final class BaseService {
         return Math.sqrt(player.distanceToSqr(base.x, base.y, base.z));
     }
 
-    /** @return false if the base's dimension no longer exists in this world. */
     public static boolean teleportTo(ServerPlayer player, WarState.TeamBase base) {
         ServerLevel level = levelOf(player.server, base);
         if (level == null) {
@@ -75,18 +67,12 @@ public final class BaseService {
         return true;
     }
 
-    /** Teleports a player to their OWN team's base. No-op (false) with no team or no base. */
     public static boolean teleportToOwnBase(ServerPlayer player) {
         WarState.TeamBase base = of(player.server, TeamService.getTeam(player.server, player));
         return base != null && teleportTo(player, base);
     }
 
-    /**
-     * Sends every online player to their own team's base - the admin panel's "TP All to Bases".
-     * Players with no team, or on a team with no base, simply stay where they are.
-     *
-     * @return how many were actually moved
-     */
+    /** Players with no team, or a team with no base, stay where they are. */
     public static int teleportAllToBases(MinecraftServer server) {
         int moved = 0;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -102,7 +88,6 @@ public final class BaseService {
         return id == null ? null : server.getLevel(ResourceKey.create(Registries.DIMENSION, id));
     }
 
-    /** "1234 68 -55" - the short form shown in the admin panel and {@code /warstate base list}. */
     public static String describe(WarState.TeamBase base) {
         return Math.round(base.x) + " " + Math.round(base.y) + " " + Math.round(base.z);
     }

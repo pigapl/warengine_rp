@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/** The caller's current team's kits, sent whenever team membership (or the team's kits) changes. */
 public record ClientboundKitCatalogPayload(List<KitCatalogEntry> kits) implements CustomPacketPayload {
 
     public static final Type<ClientboundKitCatalogPayload> TYPE =

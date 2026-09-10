@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin Kit Library screen's per-team toggle - assigns the kit to {@code team} if not mapped, else unassigns it. */
 public record ServerboundAdminToggleKitTeamPayload(String kitId, String team) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminToggleKitTeamPayload> TYPE =

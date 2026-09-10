@@ -4,11 +4,6 @@ import com.pigapl.warengine.network.KitCatalogEntry;
 
 import java.util.List;
 
-/**
- * The latest server-pushed kit state, read by the client addon's pickers. Lives in the base mod
- * because the payload handlers that write it do ({@link ClientPayloadHandlers}). Client-only:
- * nothing server-side calls into it.
- */
 public final class ClientKitCache {
 
     private static volatile List<KitCatalogEntry> catalog = List.of();
@@ -21,16 +16,13 @@ public final class ClientKitCache {
         return catalog;
     }
 
-    /** The player's own assigned kit id, or {@code ""} if none. */
     public static String kitId() {
         return kitId;
     }
 
     /**
-     * Bumped on every server push, so an open screen knows its cards are stale - without it a kit
-     * whose last slot was just taken keeps rendering as available until the screen is reopened.
-     * Client thread only (handlers go through {@code enqueueWork}) and readers only test for
-     * inequality, so the non-atomic increment is fine.
+     * Bumped on every server push so an open screen knows its cards are stale. Client thread only and
+     * readers only test for inequality, so the non-atomic increment is fine.
      */
     public static int revision() {
         return revision;

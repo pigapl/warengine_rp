@@ -12,19 +12,14 @@ import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 /**
- * The latest server-pushed admin snapshots, plus a one-shot "open the admin screen" flag. Lives in
- * the base mod because the payload handlers that write it do; the client addon reads it.
+ * The latest server-pushed admin snapshots, plus a one-shot "open the admin screen" flag.
+ * {@link #consumeOpenRequest()} clears itself on read, or a sticky flag would force the screen back
+ * open every time the player closed it.
  *
- * <p>{@link #consumeOpenRequest()} clears itself on read - the addon's tick loop calls it every tick,
- * so a sticky flag would force the screen back open every time the player closed it. One shared
- * {@link #revision()} covers all four snapshots: a screen only needs "did anything change".</p>
- *
- * <p><b>Every setter skips the bump when nothing actually changed.</b> The admin screens POLL once a
- * second, so without this {@code revision} would bump on every reply and screens that rebuild on a
- * bump would do so constantly - which wiped an {@code EditBox}'s text and focus mid-type, a real bug.
- * Team/squad snapshots use plain {@code equals()}. Kit/scarce ones carry an {@link ItemStack}, which
- * has no meaningful {@code equals()} here (two identical stacks from separate calls never match), so
- * they compare field-by-field with {@code ItemStack.matches} for the icon.</p>
+ * <p><b>Every setter skips the bump when nothing actually changed.</b> The screens POLL once a
+ * second, so without this every reply rebuilt every widget - which wiped an {@code EditBox} mid-type.
+ * Kit/scarce snapshots carry an {@link ItemStack}, which has no meaningful {@code equals()} here, so
+ * they compare field-by-field with {@code ItemStack.matches}.</p>
  */
 public final class ClientAdminCache {
 
@@ -58,12 +53,10 @@ public final class ClientAdminCache {
         return budgetSnapshot;
     }
 
-    /** Bumped on every server push - see {@link ClientKitCache#revision()} for why. */
     public static int revision() {
         return revision;
     }
 
-    /** True at most once per open request - clears itself on read. Client thread only. */
     public static boolean consumeOpenRequest() {
         if (!openRequested) {
             return false;
@@ -72,8 +65,7 @@ public final class ClientAdminCache {
         return true;
     }
 
-    /** Still bumps ~1/s during a war, since {@code timeLeftMillis} really does change. The win is the
-     * idle case: with no war running, repeated identical polls stop bumping. */
+    /** Still bumps ~1/s during a war ({@code timeLeftMillis} moves); the win is the idle case. */
     static void setSnapshot(ClientboundAdminSnapshotPayload value) {
         if (value.equals(snapshot)) {
             return;

@@ -15,11 +15,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/**
- * The kit library: every kit that exists, with icon, display name, limit, and which teams may use
- * it. Replaces having to type {@code /kit name}, {@code /kit limit}, {@code /kit assign|unassign}
- * one command at a time. Editing lives in {@link EditKitScreen}; this screen is the list + Delete.
- */
 public final class AdminKitsScreen extends Screen {
 
     private static final int POLL_INTERVAL_TICKS = 20;

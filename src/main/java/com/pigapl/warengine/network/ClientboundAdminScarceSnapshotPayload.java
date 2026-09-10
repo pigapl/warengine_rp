@@ -10,7 +10,6 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
-/** The current scarce-weapon list (normalised identities, as stored) for the admin Scarce Weapons screen. */
 public record ClientboundAdminScarceSnapshotPayload(List<ItemStack> items) implements CustomPacketPayload {
 
     public static final Type<ClientboundAdminScarceSnapshotPayload> TYPE =

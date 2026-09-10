@@ -16,12 +16,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/**
- * Scarce-weapon list (RPG/sniper/LMG-type items, see {@code ScarceItems}): view what's marked, undo
- * a mark, or mark whatever's in the admin's hand - the UI wrapper for {@code /kit scarce}. Marking
- * still requires physically holding the item, same as the command; this screen doesn't remove that
- * constraint, it just saves typing.
- */
 public final class AdminScarceScreen extends Screen {
 
     private static final int POLL_INTERVAL_TICKS = 20;

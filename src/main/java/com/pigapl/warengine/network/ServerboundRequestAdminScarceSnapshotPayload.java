@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client asks for a fresh scarce-weapon list - the admin Scarce Weapons screen polls this while open. */
 public record ServerboundRequestAdminScarceSnapshotPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundRequestAdminScarceSnapshotPayload> TYPE =

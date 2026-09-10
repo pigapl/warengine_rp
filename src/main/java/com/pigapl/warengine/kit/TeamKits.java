@@ -26,35 +26,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The whole per-event setup, stored at {@code config/warengine_pigapl/teamkits.json}: which teams
- * exist, what they look like, and which kits each may use.
- *
- * <pre>
- *   {
- *     "red":  { "color": "red",         "displayName": "RP", "kits": ["assault_ak", "medic"] },
- *     "blue": { "color": "dark_purple",                      "kits": ["assault_m16"] },
- *     "*":    { "kits": ["spectator"] }
- *   }
- * </pre>
+ * The per-event setup at {@code config/warengine_pigapl/teamkits.json}: which teams exist, what they
+ * look like, and which kits each may use.
  *
  * <p><b>Why this holds teams and not just kits:</b> {@code config/} is per server and survives world
- * swaps; vanilla scoreboard teams live in {@code <world>/data/scoreboard.dat} and do not. A fresh map
- * would otherwise mean rebuilding teams by hand - {@code /kit teams restore} recreates them from here.</p>
- *
- * <p>Kits are referenced by id, never copied, so editing a kit file updates it for every team using
- * it. A kit in no list is admin-only by construction; {@code "*"} grants a kit to every team.</p>
+ * swaps; scoreboard teams live in {@code <world>/data/scoreboard.dat} and do not. A fresh map would
+ * otherwise mean rebuilding teams by hand - {@code /kit teams restore} recreates them from here.</p>
  */
 public final class TeamKits {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
-    /** Pseudo-team id that grants a kit to every team. Not a real scoreboard team. */
     public static final String ALL_TEAMS = "*";
 
     /**
-     * One team's saved setup. {@code color}/{@code displayName} are null when unset. {@code budgets}
-     * maps a kit id to how many this team may field IN TOTAL across its squads, handed out as
-     * reservations claimed at squad creation; a kit with no entry follows its plain
-     * {@code KitDefinition.limit} per squad. Budgets on the {@code "*"} pseudo-team are ignored.
+     * {@code budgets} is how many this team may field IN TOTAL across its squads, claimed as
+     * reservations at squad creation. No entry means the kit follows its plain per-squad limit.
+     * Budgets on the {@code "*"} pseudo-team are ignored.
      */
     public record TeamDef(String id, String color, String displayName, List<String> kits,
                           Map<String, Integer> budgets) {
@@ -75,9 +62,7 @@ public final class TeamKits {
         return FMLPaths.CONFIGDIR.get().resolve(WarEngine.MODID).resolve("teamkits.json");
     }
 
-    // ------------------------------------------------------------------ kit mapping
 
-    /** Kit ids available to a team, including the {@code "*"} entries. Never null. */
     public static List<String> kitsFor(String teamId) {
         LinkedHashSet<String> out = new LinkedHashSet<>(kitsOf(ALL_TEAMS));
         if (teamId != null) {
@@ -95,12 +80,7 @@ public final class TeamKits {
         return kitsFor(teamId).contains(KitStorage.normalizeId(kitId));
     }
 
-    // ------------------------------------------------------------------ kit budgets (per team, per kit)
 
-    /**
-     * How many of {@code kitId} this team may field in total. {@code 0} = no budget, so the kit falls
-     * back to its plain {@code KitDefinition.limit} per squad. Concrete teams only; {@code "*"} ignored.
-     */
     public static int budgetFor(String teamId, String kitId) {
         if (teamId == null) {
             return 0;
@@ -113,7 +93,6 @@ public final class TeamKits {
         return budgetFor(teamId, kitId) > 0;
     }
 
-    /** This team's budgeted kits and their totals, as an unmodifiable snapshot (never null). */
     public static Map<String, Integer> budgetsOf(String teamId) {
         if (teamId == null) {
             return Map.of();
@@ -122,10 +101,6 @@ public final class TeamKits {
         return def == null ? Map.of() : Map.copyOf(def.budgets());
     }
 
-    /**
-     * Sets ({@code count > 0}) or clears ({@code count <= 0}) a team's budget for a kit, creating the
-     * team entry if it does not exist yet (same as {@link #assign}). Persists immediately.
-     */
     public static void setBudget(String teamId, String kitId, int count) throws IOException {
         String team = KitStorage.normalizeId(teamId);
         String kit = KitStorage.normalizeId(kitId);
@@ -141,12 +116,10 @@ public final class TeamKits {
         save();
     }
 
-    /** Every saved team, in file order. */
     public static Map<String, TeamDef> all() {
         return Collections.unmodifiableMap(TEAMS);
     }
 
-    /** @return false if the kit was already mapped to that team. */
     public static boolean assign(String kitId, String teamId) throws IOException {
         String kit = KitStorage.normalizeId(kitId);
         String team = KitStorage.normalizeId(teamId);
@@ -162,7 +135,6 @@ public final class TeamKits {
         return true;
     }
 
-    /** @return false if the kit was not mapped to that team in the first place. */
     public static boolean unassign(String kitId, String teamId) throws IOException {
         String kit = KitStorage.normalizeId(kitId);
         String team = KitStorage.normalizeId(teamId);
@@ -183,12 +155,6 @@ public final class TeamKits {
         return true;
     }
 
-    /**
-     * Drops a kit from every team's list. Called when the kit file is deleted, so no dangling
-     * reference is left to warn at every boot and silently shrink those teams' menus.
-     *
-     * @return how many teams referenced it
-     */
     public static int removeKitEverywhere(String kitId) throws IOException {
         String kit = KitStorage.normalizeId(kitId);
         int removed = 0;
@@ -216,20 +182,14 @@ public final class TeamKits {
         return removed;
     }
 
-    // ------------------------------------------------------------------ team lifecycle
 
     public enum TeamResult { OK, NOT_FOUND, BAD_COLOR, NOT_A_TEAM }
 
-    /** True for a real colour name - {@code ChatFormatting} also covers "bold", "underline" etc. */
     private static boolean isColorName(String name) {
         ChatFormatting formatting = ChatFormatting.getByName(name);
         return formatting != null && formatting.isColor();
     }
 
-    /**
-     * Creates the scoreboard team (if missing) and records it here for {@link #restore}. Adopts an
-     * existing team rather than failing, so one made with vanilla {@code /team add} can be taken over.
-     */
     public static TeamResult addTeam(MinecraftServer server, String teamId, String color) throws IOException {
         String team = KitStorage.normalizeId(teamId);
         if (team.equals(ALL_TEAMS)) {
@@ -256,7 +216,6 @@ public final class TeamKits {
         return TeamResult.OK;
     }
 
-    /** Deletes the scoreboard team AND forgets it here, so it does not come back on restore. */
     public static TeamResult removeTeam(MinecraftServer server, String teamId) throws IOException {
         String team = KitStorage.normalizeId(teamId);
         Scoreboard scoreboard = server.getScoreboard();
@@ -272,12 +231,6 @@ public final class TeamKits {
         return TeamResult.OK;
     }
 
-    /**
-     * Recreates every saved team missing from this world, with its saved color and display name.
-     * Existing teams are left alone, so a live {@code /team modify} is not clobbered.
-     *
-     * @return how many teams were created.
-     */
     public static int restore(MinecraftServer server) {
         Scoreboard scoreboard = server.getScoreboard();
         int created = 0;
@@ -297,9 +250,7 @@ public final class TeamKits {
         return created;
     }
 
-    // ------------------------------------------------------------------ persistence
 
-    /** Wipes the in-memory setup and reloads it from disk. @return number of teams loaded. */
     public static int loadAll() {
         TEAMS.clear();
         Path path = file();
@@ -325,7 +276,6 @@ public final class TeamKits {
         return TEAMS.size();
     }
 
-    /** Accepts both the full object form and a bare kit-id array, so hand-edits stay forgiving. */
     private static TeamDef parseTeam(String team, JsonElement value) {
         List<String> kits = new ArrayList<>();
         if (value.isJsonArray()) {
@@ -391,12 +341,7 @@ public final class TeamKits {
         Files.writeString(file(), GSON.toJson(root));
     }
 
-    // ------------------------------------------------------------------ diagnostics
 
-    /**
-     * Warns about every mapped kit id with no kit file - catches a typo at boot rather than on event
-     * night, when a team would silently be one kit short.
-     */
     public static void warnAboutMissingKits() {
         TEAMS.forEach((team, def) -> {
             for (String kit : def.kits()) {
@@ -408,7 +353,6 @@ public final class TeamKits {
         });
     }
 
-    /** Warns about saved teams missing from this world's scoreboard - the fresh-map case. */
     public static void warnAboutMissingTeams(MinecraftServer server) {
         List<String> existing = TeamService.ids(server);
         for (String team : TEAMS.keySet()) {

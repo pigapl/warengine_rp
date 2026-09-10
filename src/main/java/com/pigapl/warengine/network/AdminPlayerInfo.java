@@ -7,11 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.UUID;
 
-/**
- * One player's row in a team or squad detail list, for the admin panel.
- *
- * @param kitId their assigned kit id, or {@code ""} for none
- */
 public record AdminPlayerInfo(String name, UUID uuid, boolean online, String kitId) {
 
     public static final StreamCodec<ByteBuf, AdminPlayerInfo> STREAM_CODEC = StreamCodec.composite(

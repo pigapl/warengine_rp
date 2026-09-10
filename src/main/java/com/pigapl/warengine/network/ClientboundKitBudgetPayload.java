@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/** The player's team's budgeted kits, with totals and how much is still unclaimed - see {@link KitBudgetEntry}. */
 public record ClientboundKitBudgetPayload(List<KitBudgetEntry> entries) implements CustomPacketPayload {
 
     public static final Type<ClientboundKitBudgetPayload> TYPE =

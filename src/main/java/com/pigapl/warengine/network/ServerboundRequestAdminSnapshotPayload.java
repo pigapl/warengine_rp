@@ -6,11 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/**
- * Client asks for a fresh admin snapshot. No fields - the admin screen polls this once a second
- * while open (same "no clean vanilla change event, so poll" reasoning as {@code TeamPickerScreen}'s
- * scoreboard signature check) rather than the server tracking who has the screen open.
- */
+/** Polled once a second while open, rather than the server tracking who has the screen open. */
 public record ServerboundRequestAdminSnapshotPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundRequestAdminSnapshotPayload> TYPE =

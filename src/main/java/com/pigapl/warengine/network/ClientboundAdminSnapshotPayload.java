@@ -9,13 +9,9 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/**
- * A full live snapshot of the war for the admin panel - sent in reply to
- * {@link ServerboundRequestAdminSnapshotPayload}. Op-gated server-side (payload handlers get no
- * automatic permission check the way a Brigadier command does - see {@code AdminNetworking}).
- */
+/** Op-gated server-side - payload handlers get no automatic permission check. */
 public record ClientboundAdminSnapshotPayload(boolean warActive, long timeLeftMillis, int ticketCap,
-                                               List<AdminTeamInfo> teams, AdminZoneBundle zoneBundle,
+                                               List<AdminTeamInfo> teams, List<AdminPointInfo> points,
                                                List<AdminHistoryEntry> history) implements CustomPacketPayload {
 
     public static final Type<ClientboundAdminSnapshotPayload> TYPE =
@@ -26,7 +22,7 @@ public record ClientboundAdminSnapshotPayload(boolean warActive, long timeLeftMi
             ByteBufCodecs.VAR_LONG, ClientboundAdminSnapshotPayload::timeLeftMillis,
             ByteBufCodecs.VAR_INT, ClientboundAdminSnapshotPayload::ticketCap,
             AdminTeamInfo.STREAM_CODEC.apply(ByteBufCodecs.list()), ClientboundAdminSnapshotPayload::teams,
-            AdminZoneBundle.STREAM_CODEC, ClientboundAdminSnapshotPayload::zoneBundle,
+            AdminPointInfo.STREAM_CODEC.apply(ByteBufCodecs.list()), ClientboundAdminSnapshotPayload::points,
             AdminHistoryEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), ClientboundAdminSnapshotPayload::history,
             ClientboundAdminSnapshotPayload::new
     );

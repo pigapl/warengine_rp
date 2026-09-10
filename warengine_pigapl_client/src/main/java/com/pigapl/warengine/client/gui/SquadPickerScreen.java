@@ -14,14 +14,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/**
- * Squad picker - the middle step, {@code Team -> Squad -> Kit}. Reads {@link ClientSquadCache}, which
- * the server pushes on team assignment and refreshes on every roster change, so it needs no request
- * of its own.
- *
- * <p>Picking sends {@link ServerboundSelectSquadPayload} and closes; the server's reply is what
- * actually advances {@code ClientEvents} to the kit picker - this screen asks, it never assumes.</p>
- */
 public final class SquadPickerScreen extends Screen {
 
     private static final int ACCENT = 0xFF5AC46A;   // your current squad
@@ -78,7 +70,6 @@ public final class SquadPickerScreen extends Screen {
         onClose();
     }
 
-    /** One step back - team is the step before squad. */
     private void addBackButton() {
         int buttonWidth = 100;
         addRenderableWidget(Button.builder(Component.literal("Change Team"),

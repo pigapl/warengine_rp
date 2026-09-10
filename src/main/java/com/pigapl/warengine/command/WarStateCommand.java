@@ -18,14 +18,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.Map;
 
-/**
- * {@code /warstate admin} - opens the admin panel (start/stop war, live team/zone/ticket info, and
- * the capture-history log) for the caller. Op-only, like every other admin surface in this mod.
- *
- * <p>Everything the panel then DOES goes over its own payloads ({@code AdminNetworking}), which
- * re-check op status themselves - this command is just the door. {@code /warstate base ...} is the
- * command-line equivalent of the panel's base controls; both call {@code BaseService}.</p>
- */
 public final class WarStateCommand {
 
     private WarStateCommand() {}

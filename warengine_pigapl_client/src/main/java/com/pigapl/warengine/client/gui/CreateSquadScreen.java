@@ -19,13 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The "create" half of the squad step - name, roster limit, and (if the team has any budgeted kits)
- * the per-kit reservation steppers: how many of each the new squad claims out of the team's budget.
- * Founding a squad joins it immediately (see {@code SquadService#create}).
- *
- * <p>The budget list comes from {@link ClientKitBudgetCache}, requested on open and re-polled while
- * open. A stepper is capped at that kit's {@code remaining} (team budget minus what other squads
- * already hold); the server re-validates on submit regardless.</p>
+ * The "create" half of the squad step - name, roster limit, and the per-kit reservation steppers.
+ * A stepper is capped at that kit's {@code remaining}; the server re-validates on submit regardless.
  */
 public final class CreateSquadScreen extends Screen {
 
@@ -37,7 +32,6 @@ public final class CreateSquadScreen extends Screen {
     private static final int MAX_VISIBLE_ROWS = 6;
     private static final int POLL_INTERVAL_TICKS = 20;
 
-    /** kit id -> how many this squad is claiming. Survives rebuildWidgets (it's a field). */
     private final Map<String, Integer> chosen = new LinkedHashMap<>();
 
     private EditBox nameBox;
@@ -48,7 +42,6 @@ public final class CreateSquadScreen extends Screen {
     private int pollTicks = 0;
     private int lastBudgetRevision = -2;
 
-    // Layout values shared between init (widgets) and render (text) - one source of truth.
     private int panelTop;
     private int listTop;
     private int visibleRows;
@@ -93,8 +86,7 @@ public final class CreateSquadScreen extends Screen {
         limitBox.setValue(prevLimit);
         addRenderableWidget(limitBox);
 
-        // Keep the running choices in step with the latest budget: drop entries for kits that lost
-        // their budget, and clamp any that now exceed what's left.
+        // Drop entries for kits that lost their budget, clamp any that now exceed what's left.
         chosen.keySet().removeIf(k -> budgets.stream().noneMatch(e -> e.kitId().equals(k)));
         for (KitBudgetEntry e : budgets) {
             Integer c = chosen.get(e.kitId());
@@ -148,14 +140,11 @@ public final class CreateSquadScreen extends Screen {
             PacketDistributor.sendToServer(new ServerboundRequestKitBudgetPayload());
         }
         if (lastBudgetRevision != ClientKitBudgetCache.revision()) {
-            rebuildPreservingFocus(); // init() preserves the typed name/limit and the chosen map
+            rebuildPreservingFocus();
         }
     }
 
-    /**
-     * {@code rebuildWidgets()} re-runs {@code init()}, which focuses the name box - fine on first
-     * open, but the ~1/s poll rebuild would otherwise steal focus off the limit box mid-type.
-     */
+    /** {@code init()} focuses the name box, so the ~1/s poll rebuild would steal focus mid-type. */
     private void rebuildPreservingFocus() {
         boolean nameFocused = nameBox != null && nameBox.isFocused();
         boolean limitFocused = limitBox != null && limitBox.isFocused();

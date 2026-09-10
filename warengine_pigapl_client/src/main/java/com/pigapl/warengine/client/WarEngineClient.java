@@ -1,10 +1,14 @@
 package com.pigapl.warengine.client;
 
 import com.mojang.logging.LogUtils;
+import com.pigapl.warengine.client.gui.HudOptionsScreen;
+import com.pigapl.warengine.client.hud.CapturePointHud;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import org.slf4j.Logger;
 
 /**
@@ -19,6 +23,12 @@ public final class WarEngineClient {
 
     public WarEngineClient(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(KeyBindings::register);
+        modEventBus.addListener(CapturePointHud::register);
+
+        modContainer.registerConfig(ModConfig.Type.CLIENT, WarClientConfig.SPEC);
+        modContainer.registerExtensionPoint(IConfigScreenFactory.class,
+                (container, parent) -> new HudOptionsScreen(parent));
+
         LOGGER.info("War Engine Client {} loaded", modContainer.getModInfo().getVersion());
     }
 }

@@ -6,13 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.List;
 
-/**
- * One team's full detail row for the admin Teams &amp; Squads screen - color, display name, members,
- * and its base.
- *
- * @param baseSummary the team's base as {@code "x y z"} ({@code BaseService#describe}), or empty if
- *                    it has none - which also means that team has no kit-range restriction
- */
+/** An empty {@code baseSummary} means no base, which also means no kit-range restriction. */
 public record AdminTeamDetail(String team, int colorArgb, String displayName,
                               List<AdminPlayerInfo> members, String baseSummary) {
 

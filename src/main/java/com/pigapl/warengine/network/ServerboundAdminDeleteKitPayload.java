@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin Kit Library screen's Delete button - calls {@code KitStorage#delete} + drops it from every team mapping. */
 public record ServerboundAdminDeleteKitPayload(String kitId) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminDeleteKitPayload> TYPE =

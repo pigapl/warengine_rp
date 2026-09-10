@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/** The whole kit library plus every team id, for the admin Kit Library screen. */
 public record ClientboundAdminKitsSnapshotPayload(List<AdminKitInfo> kits, List<String> teamIds)
         implements CustomPacketPayload {
 

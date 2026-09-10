@@ -15,13 +15,6 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Registers the three squad payloads and handles the two inbound ones.
- *
- * <p>Squads sit between team and kit, so a squad change also invalidates kit slot counts:
- * {@link KitAvailability#taken} is squad-scoped, so the mover's own catalog AND those of whoever
- * shares the old/new squad need refreshing - see {@link #refreshAfterSquadChange}.</p>
- */
 public final class SquadNetworking {
     private SquadNetworking() {}
 
@@ -47,7 +40,6 @@ public final class SquadNetworking {
                 });
     }
 
-    // ------------------------------------------------------------------ inbound (client -> server)
 
     private static void handleSelectSquad(ServerboundSelectSquadPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) {
@@ -71,10 +63,8 @@ public final class SquadNetworking {
     }
 
     /**
-     * After a join/create, called from BOTH the payload handlers here and {@code SquadCommand} so the
-     * two paths can never disagree about what gets pushed: confirm the mover's own state, refresh the
-     * team's squad list (a roster count changed, maybe a squad appeared or vanished), and refresh kit
-     * catalogs for the old squad (slot freed) and new one (slot taken). Nobody else's numbers moved.
+     * Called from BOTH the payload handlers here and {@code SquadCommand}, so the two paths can never
+     * disagree about what gets pushed. Nobody outside the old and new squads is affected.
      */
     public static void refreshAfterSquadChange(ServerPlayer player, String oldSquadId, String newSquadId) {
         MinecraftServer server = player.server;
@@ -97,9 +87,7 @@ public final class SquadNetworking {
         }
     }
 
-    // ------------------------------------------------------------------ outbound (server -> client)
 
-    /** Refreshes the squad list (and so the roster counts) for every online player on a team. */
     public static void sendSquadListToTeam(MinecraftServer server, String team) {
         if (team == null) {
             return;
@@ -111,7 +99,6 @@ public final class SquadNetworking {
         }
     }
 
-    /** Sends the player their current team's squads, or an empty list if they have no team. */
     public static void sendSquadListFor(ServerPlayer player) {
         String team = TeamService.getTeam(player.server, player);
         List<SquadEntry> entries = new ArrayList<>();

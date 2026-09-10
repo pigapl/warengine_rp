@@ -16,10 +16,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/**
- * Admin panel's squad-editing screen - rename and/or change the roster limit. Reached from a
- * squad's "Edit" button on {@link AdminTeamsScreen}; "Back" returns there.
- */
 public final class EditSquadScreen extends Screen {
 
     private static final int FIELD_WIDTH = 180;
@@ -88,7 +84,6 @@ public final class EditSquadScreen extends Screen {
             int limit = Integer.parseInt(limitBox.getValue().trim());
             PacketDistributor.sendToServer(new ServerboundAdminSetSquadLimitPayload(squadId, limit));
         } catch (NumberFormatException ignored) {
-            // blank/invalid - leave the limit alone
         }
         status = Component.literal("Saved.").withStyle(ChatFormatting.GREEN);
     }
@@ -100,8 +95,7 @@ public final class EditSquadScreen extends Screen {
             requestSnapshot();
         }
         if (lastSeenRevision != ClientAdminCache.revision()) {
-            // Same wipe-while-typing bug as EditKitScreen - see its tick() comment. Preserve both
-            // fields and focus across the poll-triggered rebuild.
+            // Same wipe-while-typing bug as EditKitScreen - see its tick() comment.
             String typedName = nameBox == null ? "" : nameBox.getValue();
             String typedLimit = limitBox == null ? "" : limitBox.getValue();
             boolean nameFocused = nameBox != null && nameBox.isFocused();

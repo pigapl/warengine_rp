@@ -3,6 +3,7 @@ package com.pigapl.warengine;
 import com.mojang.logging.LogUtils;
 import com.pigapl.warengine.network.AdminNetworking;
 import com.pigapl.warengine.network.KitNetworking;
+import com.pigapl.warengine.network.RoundNetworking;
 import com.pigapl.warengine.network.SquadNetworking;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -26,7 +27,7 @@ public final class WarEngine {
         modEventBus.addListener(KitNetworking::register);
         modEventBus.addListener(SquadNetworking::register);
         modEventBus.addListener(AdminNetworking::register);
-        // Game-bus event handlers live in GameEvents (@EventBusSubscriber). Nothing else to wire here yet.
+        modEventBus.addListener(RoundNetworking::register);
         LOGGER.info("War Engine {} loaded", modContainer.getModInfo().getVersion());
     }
 }

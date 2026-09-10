@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** The player's own assigned squad id. {@code ""} means no squad yet - squad ids are never empty. */
 public record ClientboundSquadStatePayload(String squadId) implements CustomPacketPayload {
 
     public static final Type<ClientboundSquadStatePayload> TYPE =

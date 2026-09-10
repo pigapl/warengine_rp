@@ -1,4 +1,5 @@
 {
   "key.categories.warengine_pigapl_client": "War Engine",
-  "key.warengine_pigapl_client.open_menu": "Open Team/Kit Menu"
+  "key.warengine_pigapl_client.open_menu": "Open Team/Kit Menu",
+  "key.warengine_pigapl_client.hud_options": "HUD Settings"
 }

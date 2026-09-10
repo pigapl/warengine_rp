@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client asks for a fresh teams/squads snapshot - the admin Teams &amp; Squads screen polls this while open. */
 public record ServerboundRequestAdminTeamsSnapshotPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundRequestAdminTeamsSnapshotPayload> TYPE =

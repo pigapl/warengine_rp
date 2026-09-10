@@ -31,45 +31,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-/**
- * {@code /kit} command tree.
- *
- * <pre>
- *   /kit &lt;class&gt;                     apply a kit to yourself (records it in WarState)
- *   /kit list                        list the kits you may use (ops see the whole library)
- *   /kit save &lt;id&gt; [team]  (op)      snapshot your loadout into a kit file, optionally mapping it
- *   /kit delete &lt;id&gt;       (op)      delete a kit file
- *   /kit give &lt;players&gt; &lt;id&gt; (op)    apply a kit to other players
- *   /kit reload            (op)      reload kit files and the team mapping from disk
- *   /kit teams              (op)     show the saved setup (flags teams missing from this world)
- *   /kit teams add &lt;team&gt; [color] (op) create a team and save it
- *   /kit teams remove &lt;team&gt;  (op)   delete a team and forget it
- *   /kit teams restore        (op)   recreate saved teams missing from this world
- *   /kit assign &lt;id&gt; &lt;team&gt;   (op)   let a team use a kit ("*" = every team)
- *   /kit unassign &lt;id&gt; &lt;team&gt; (op)   take it away again
- *   /kit scarce setscarce     (op)   mark your held item scarce (RPG/sniper/LMG - issued once)
- *   /kit scarce unsetscarce   (op)   unmark your held item
- *   /kit scarce list          (op)   show the scarce list
- *   /kit scarce sweep         (op)   run the round-start scarce-weapon issuance now
- * </pre>
- *
- * <p>The saved setup lives in {@code config/}, which survives world swaps, while scoreboard teams do
- * not - hence {@code teams restore}. A non-op may only equip a kit mapped to their team, so a kit
- * mapped to none is admin-only by construction. See {@link TeamKits}.</p>
- *
- * <p>The literals above are reserved: a kit named one of them cannot be applied via
- * {@code /kit &lt;class&gt;}.</p>
- */
 public final class KitCommand {
 
-    /** Full kit library - fine everywhere it's used, since every one of those nodes is op-gated. */
     private static final SuggestionProvider<CommandSourceStack> KIT_IDS =
             (ctx, builder) -> SharedSuggestionProvider.suggest(KitStorage.ids(), builder);
 
     /**
-     * Kit names for the PUBLIC {@code /kit <class>} argument - deliberately NOT {@link #KIT_IDS}.
-     * That node is reachable by anyone, so its suggestions are the one place a non-op could otherwise
-     * tab-complete every admin-only kit in the library. Mirrors {@link #applySelf}'s access check.
+     * Deliberately NOT {@link #KIT_IDS}: the public node's suggestions are the one place a non-op
+     * could otherwise tab-complete every admin-only kit in the library.
      */
     private static final SuggestionProvider<CommandSourceStack> SELF_APPLY_KIT_IDS = (ctx, builder) -> {
         CommandSourceStack src = ctx.getSource();
@@ -86,7 +55,6 @@ public final class KitCommand {
         return SharedSuggestionProvider.suggest(TeamKits.kitsFor(team), builder);
     };
 
-    /** Existing scoreboard teams, plus "*" for every-team, plus any saved-but-not-yet-restored team. */
     private static final SuggestionProvider<CommandSourceStack> TEAM_IDS = (ctx, builder) -> {
         LinkedHashSet<String> options = new LinkedHashSet<>();
         options.add(TeamKits.ALL_TEAMS);
@@ -200,7 +168,6 @@ public final class KitCommand {
                         .executes(ctx -> applySelf(ctx, StringArgumentType.getString(ctx, "class")))));
     }
 
-    /** Ops see the whole library; a player sees only what their team may equip. */
     private static int list(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         if (src.hasPermission(2)) {
@@ -238,7 +205,6 @@ public final class KitCommand {
         return allowed.size();
     }
 
-    /** Lists the saved setup, flagging teams missing from this world - the fresh-map case. */
     private static int teams(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         Map<String, TeamKits.TeamDef> saved = TeamKits.all();
@@ -334,10 +300,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /**
-     * Sets the menu label, so a file named {@code 0.4} can display as "Assault". The file id stays the
-     * id - two files sharing a display name is how one role gets different gear per team.
-     */
     private static int setName(CommandContext<CommandSourceStack> ctx, String id, String display) {
         CommandSourceStack src = ctx.getSource();
         String norm = KitStorage.normalizeId(id);
@@ -358,7 +320,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /** @param count how many players per SQUAD may hold this kit at once; 0 = unlimited. */
     private static int setLimit(CommandContext<CommandSourceStack> ctx, String id, int count) {
         CommandSourceStack src = ctx.getSource();
         String norm = KitStorage.normalizeId(id);
@@ -381,10 +342,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /**
-     * Sets or clears a team's TOTAL budget for a kit - how many the whole team may field, handed to
-     * its squads as reservations. A kit with no budget uses its plain {@link #setLimit} cap instead.
-     */
     private static int setBudget(CommandContext<CommandSourceStack> ctx, String team, String kit, int count) {
         CommandSourceStack src = ctx.getSource();
         String normTeam = KitStorage.normalizeId(team);
@@ -413,7 +370,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /** Lists every team's kit budgets, with how much is reserved vs still free. */
     private static int budgetList(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         MinecraftServer server = src.getServer();
@@ -439,7 +395,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /** Pushes a fresh catalog to every online player whose team can use this kit. */
     private static void resendCatalogForKit(CommandSourceStack src, String normalizedKit) {
         for (ServerPlayer online : src.getServer().getPlayerList().getPlayers()) {
             String theirTeam = TeamService.getTeam(src.getServer(), online);
@@ -501,10 +456,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /**
-     * Pushes a fresh catalog to the players a mapping edit just changed things for - it does not
-     * otherwise reach already-connected clients. {@code "*"} means everyone online.
-     */
     private static void resendCatalogToTeam(CommandSourceStack src, String normalizedTeam) {
         for (ServerPlayer online : src.getServer().getPlayerList().getPlayers()) {
             String theirTeam = TeamService.getTeam(src.getServer(), online);
@@ -526,7 +477,6 @@ public final class KitCommand {
         return count;
     }
 
-    /** @param team optional - when given, the freshly saved kit is mapped to that team in one step. */
     private static int save(CommandContext<CommandSourceStack> ctx, String id, String team) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
@@ -626,9 +576,9 @@ public final class KitCommand {
                         + "get within " + Math.round(WarConfig.BASE_KIT_RADIUS.get()) + " blocks of it."));
                 return 0;
             }
-            case OK -> { /* fall through to success message below */ }
+            case OK -> { }
         }
-        KitNetworking.sendKitState(player); // keeps the client-UI cache in sync with the command path
+        KitNetworking.sendKitState(player);
         KitNetworking.sendCatalogToSquad(src.getServer(), WarState.get(src.getServer()).getSquad(player.getUUID()));
         src.sendSuccess(() -> Component.literal("Equipped kit '" + norm + "'.")
                 .withStyle(ChatFormatting.GREEN), false);
@@ -636,9 +586,8 @@ public final class KitCommand {
     }
 
     /**
-     * Marks the held item scarce: excluded from every kit-apply and respawn reconcile, issued only by
-     * the round-start sweep. Matched on reconcile's normalised identity, so a TACZ gun is identified
-     * by its {@code GunId}, not its shared item id - see {@link ScarceItems}.
+     * Matched on reconcile's normalised identity, so a TACZ gun is identified by its {@code GunId},
+     * not its shared item id - see {@link ScarceItems}.
      */
     private static int scarceSet(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
@@ -670,7 +619,6 @@ public final class KitCommand {
         return 1;
     }
 
-    /** Undoes {@link #scarceSet} for the caller's held item. */
     private static int scarceUnset(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
@@ -718,10 +666,6 @@ public final class KitCommand {
         return items.size();
     }
 
-    /**
-     * Manual trigger for {@link KitService#issueScarceWeapons}, for testing. The real issuance happens
-     * at the whistle in {@code RoundService#start}, which calls the same method.
-     */
     private static int scarceSweep(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         if (ScarceItems.all().isEmpty()) {
@@ -735,7 +679,6 @@ public final class KitCommand {
         return issued;
     }
 
-    /** Resolves the caller's assigned kit, reporting the reason when there isn't one. */
     private static KitDefinition assignedKit(CommandSourceStack src, ServerPlayer player) {
         String kitId = WarState.get(src.getServer()).getKit(player.getUUID());
         if (kitId == null) {
@@ -781,7 +724,7 @@ public final class KitCommand {
         if (kit == null) {
             return 0;
         }
-        KitService.reconcile(player, kit, 0); // manual trigger - no "get clear of spawn" grace
+        KitService.reconcile(player, kit, 0);
         return 1;
     }
 

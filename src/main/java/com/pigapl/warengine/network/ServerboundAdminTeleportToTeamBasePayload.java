@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's per-team "TP" button - sends the ADMIN to that team's base to eyeball it. */
 public record ServerboundAdminTeleportToTeamBasePayload(String team) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminTeleportToTeamBasePayload> TYPE =

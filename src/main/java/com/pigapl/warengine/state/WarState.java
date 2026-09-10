@@ -17,45 +17,31 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Single source of truth for a running event, persisted with the overworld: each player's kit and
- * squad, the round state (running, end time, tickets, marker zone) and team bases.
+ * Single source of truth for a running event, persisted with the overworld.
  *
- * <p>Team membership deliberately does NOT live here - it uses vanilla scoreboard teams
- * ({@code TeamService}), which already persist and give color/friendly-fire/nametags. Squads have no
- * vanilla equivalent, so they live entirely here.</p>
+ * <p>Team membership deliberately does NOT live here - it uses vanilla scoreboard teams, which
+ * already give persistence, colour, friendly-fire and nametags. Squads have no vanilla equivalent.</p>
  */
 public final class WarState extends SavedData {
     private static final String NAME = "warengine_state";
 
     private static final Factory<WarState> FACTORY = new Factory<>(WarState::new, WarState::load);
 
-    /** Per-player event data. Public mutable fields on purpose - this is a plain data holder. */
     public static final class PlayerRecord {
-        /** Assigned kit/class id, or {@code null} if the player has not picked one. */
         public String kitId;
-        /**
-         * When {@link #kitId} last CHANGED (epoch millis), or {@code 0}. The scarce sweep breaks ties
-         * for an over-limit kit by it - earliest assignment keeps the weapon. Re-picking the kit you
-         * already hold does not bump it, so you keep your seniority.
-         */
+        /** When {@link #kitId} last CHANGED. Re-picking the same kit does not bump it - seniority is kept. */
         public long kitAssignedAtMs;
-        /** Assigned squad id, or {@code null} if the player has not picked/created one. */
         public String squadId;
 
         PlayerRecord() {}
     }
 
-    /** One player-created squad. Membership is derived (see {@link #squadMembers}), not stored here. */
     public static final class SquadRecord {
         public final String id;
         public final String team;
         public String name;
         public int limit;
-        /**
-         * kit id -&gt; how much of the team's budget this squad claimed. Only meaningful for budgeted
-         * kits ({@code TeamKits.budgetFor}), where this number IS the squad's cap on simultaneous
-         * holders and 0 means the kit is not offered to it. Set at creation, then admin-only.
-         */
+        /** For budgeted kits this number IS the squad's cap; 0 means the kit is not offered to it. */
         public final Map<String, Integer> kitReservations = new LinkedHashMap<>();
 
         SquadRecord(String id, String team, String name, int limit) {
@@ -70,54 +56,65 @@ public final class WarState extends SavedData {
     private final Map<String, SquadRecord> squads = new LinkedHashMap<>();
     private int nextSquadSeq = 1;
 
-    // ---- round state (one event-wide record, not per player) --------------------------------------
     private boolean roundActive;
     /** Wall-clock end of the round. Epoch millis, not a server tick - tick counts reset on restart. */
     private long roundEndEpochMillis;
-    /** team id -> reinforcement tickets remaining. */
     private final Map<String, Integer> tickets = new LinkedHashMap<>();
 
-    // Marker zone. All four null/absent = unset.
-    private String zoneDim;
-    private Integer zoneX;
-    private Integer zoneY;
-    private Integer zoneZ;
-    private double zoneRadius = 5.0;
-
     /**
-     * One entry in the capture-zone change log - the admin panel's "who has it / who had it" view.
-     * Written only from {@code RoundService#tickCaptureZone}, which recomputes the holder every second
-     * but appends here only on an actual transition.
+     * Ownership is STICKY - {@link #owner} earns whether or not anyone stands here. {@link #progress}
+     * is the capture bar and only ever belongs to {@link #capturingTeam}.
      */
+    public static final class CapturePoint {
+        public final String id;
+        public final String dim;
+        public final int x;
+        public final int y;
+        public final int z;
+        public double radius;
+        public String owner;
+        public String capturingTeam;
+        public int progress;
+
+        CapturePoint(String id, String dim, int x, int y, int z, double radius) {
+            this.id = id;
+            this.dim = dim;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.radius = radius;
+        }
+    }
+
+    private final Map<String, CapturePoint> points = new LinkedHashMap<>();
+
+    /** Capture change log. Appended only on an actual flip, not every tick. */
     public static final class CaptureLogEntry {
         public final long epochMillis;
-        /** Team id, or {@code null} meaning the zone went empty or contested at this moment. */
+        public final String point;
         public final String team;
-        /** Player names present at the moment of transition - the holder's, or (if contested) all of them. */
         public final List<String> players;
 
-        CaptureLogEntry(long epochMillis, String team, List<String> players) {
+        CaptureLogEntry(long epochMillis, String point, String team, List<String> players) {
             this.epochMillis = epochMillis;
+            this.point = point;
             this.team = team;
             this.players = players;
         }
     }
 
-    private String zoneHolderTeam;
     private final List<CaptureLogEntry> captureHistory = new ArrayList<>();
     private static final int MAX_CAPTURE_HISTORY = 50;
 
     /**
-     * One team's base: respawn point, "TP all to bases" target, and the only place its players may
-     * pick a kit (see {@code BaseService}). Here rather than {@code teamkits.json} because a position
-     * is per-WORLD - on a fresh map those coordinates mean nothing, same as the capture zone.
+     * Respawn point, TP-all target, and the only place its players may pick a kit. Here rather than
+     * {@code teamkits.json} because a position is per-WORLD - on a fresh map it means nothing.
      */
     public static final class TeamBase {
         public final String dim;
         public final double x;
         public final double y;
         public final double z;
-        /** The setting admin's facing, so a mass teleport drops everyone looking the same way. */
         public final float yaw;
 
         TeamBase(String dim, double x, double y, double z, float yaw) {
@@ -134,7 +131,6 @@ public final class WarState extends SavedData {
 
     public WarState() {}
 
-    /** Gets (or creates) the state attached to the overworld. */
     public static WarState get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
     }
@@ -143,7 +139,6 @@ public final class WarState extends SavedData {
         return players.computeIfAbsent(id, k -> new PlayerRecord());
     }
 
-    /** Assigned kit id for a player, or {@code null}. */
     public String getKit(UUID id) {
         PlayerRecord r = players.get(id);
         return r == null ? null : r.kitId;
@@ -167,15 +162,12 @@ public final class WarState extends SavedData {
         }
     }
 
-    /** When the current kit was assigned (epoch millis), or {@code 0}. See {@link PlayerRecord#kitAssignedAtMs}. */
     public long getKitAssignedAtMs(UUID id) {
         PlayerRecord r = players.get(id);
         return r == null ? 0L : r.kitAssignedAtMs;
     }
 
-    // ---- squads -----------------------------------------------------------------------------------
 
-    /** Assigned squad id for a player, or {@code null}. */
     public String getSquad(UUID id) {
         PlayerRecord r = players.get(id);
         return r == null ? null : r.squadId;
@@ -194,7 +186,6 @@ public final class WarState extends SavedData {
         }
     }
 
-    /** Every squad, keyed by id, in creation order. Iterate for display; use the mutators to change. */
     public Map<String, SquadRecord> squads() {
         return Collections.unmodifiableMap(squads);
     }
@@ -203,11 +194,7 @@ public final class WarState extends SavedData {
         return squadId == null ? null : squads.get(squadId);
     }
 
-    /**
-     * Creates and registers a squad, returning its generated id (never reused within this world).
-     * Positive {@code reservations} are copied on as-is - {@code SquadService} must have validated
-     * them against the team budget first.
-     */
+    /** {@code reservations} are copied as-is - {@code SquadService} must validate them against the budget first. */
     public SquadRecord createSquad(String team, String name, int limit, Map<String, Integer> reservations) {
         String id = "sq" + (nextSquadSeq++);
         SquadRecord record = new SquadRecord(id, team, name, limit);
@@ -223,7 +210,6 @@ public final class WarState extends SavedData {
         return record;
     }
 
-    /** Sets ({@code count > 0}) or clears ({@code count <= 0}) one squad's reservation for a kit. */
     public void setSquadReservation(String squadId, String kitId, int count) {
         SquadRecord r = squads.get(squadId);
         if (r == null) {
@@ -244,7 +230,6 @@ public final class WarState extends SavedData {
         }
     }
 
-    /** Every player id currently assigned to {@code squadId} - online or not. */
     public List<UUID> squadMembers(String squadId) {
         List<UUID> out = new ArrayList<>();
         players.forEach((id, r) -> {
@@ -255,7 +240,6 @@ public final class WarState extends SavedData {
         return out;
     }
 
-    /** No-op if the squad no longer exists (e.g. a stale admin-panel click after it emptied out). */
     public void renameSquad(String squadId, String name) {
         SquadRecord r = squads.get(squadId);
         if (r != null) {
@@ -264,7 +248,6 @@ public final class WarState extends SavedData {
         }
     }
 
-    /** No-op if the squad no longer exists - see {@link #renameSquad}. */
     public void setSquadLimit(String squadId, int limit) {
         SquadRecord r = squads.get(squadId);
         if (r != null) {
@@ -273,7 +256,6 @@ public final class WarState extends SavedData {
         }
     }
 
-    // ---- round ----------------------------------------------------------------------------------
 
     public boolean roundActive() {
         return roundActive;
@@ -283,7 +265,6 @@ public final class WarState extends SavedData {
         return roundEndEpochMillis;
     }
 
-    /** Live ticket map, keyed by team id. Iterate for display; use {@link #setTickets} to mutate. */
     public Map<String, Integer> tickets() {
         return tickets;
     }
@@ -310,7 +291,6 @@ public final class WarState extends SavedData {
         setDirty();
     }
 
-    /** Extends (positive) or shortens (negative) a running war's clock. No-op if none is running. */
     public void adjustRoundEnd(long deltaMillis) {
         if (roundActive) {
             roundEndEpochMillis += deltaMillis;
@@ -318,75 +298,85 @@ public final class WarState extends SavedData {
         }
     }
 
-    // ---- zone ----------------------------------------------------------------------------------
 
-    public boolean hasZone() {
-        return zoneDim != null && zoneX != null && zoneY != null && zoneZ != null;
+    /** Ids are stored uppercased, so /war point tp a finds point A. */
+    private static String pointKey(String id) {
+        return id == null ? null : id.toUpperCase(Locale.ROOT);
     }
 
-    public void setZone(String dim, int x, int y, int z, double radius) {
-        zoneDim = dim;
-        zoneX = x;
-        zoneY = y;
-        zoneZ = z;
-        zoneRadius = radius;
+    public List<CapturePoint> points() {
+        return List.copyOf(points.values());
+    }
+
+    public CapturePoint getPoint(String id) {
+        return id == null ? null : points.get(pointKey(id));
+    }
+
+    public boolean hasPoints() {
+        return !points.isEmpty();
+    }
+
+    public CapturePoint addPoint(String id, String dim, int x, int y, int z, double radius) {
+        CapturePoint p = new CapturePoint(pointKey(id), dim, x, y, z, radius);
+        points.put(p.id, p);
+        setDirty();
+        return p;
+    }
+
+    public boolean removePoint(String id) {
+        if (points.remove(pointKey(id)) == null) {
+            return false;
+        }
+        setDirty();
+        return true;
+    }
+
+    public int clearPoints() {
+        int n = points.size();
+        points.clear();
+        setDirty();
+        return n;
+    }
+
+    public void setPointProgress(String id, String team, int progress) {
+        CapturePoint p = getPoint(id);
+        if (p == null) {
+            return;
+        }
+        p.capturingTeam = team;
+        p.progress = team == null ? 0 : Math.max(0, progress);
         setDirty();
     }
 
-    public void clearZone() {
-        zoneDim = null;
-        zoneX = null;
-        zoneY = null;
-        zoneZ = null;
-        setDirty();
-    }
-
-    public String zoneDim() {
-        return zoneDim;
-    }
-
-    public int zoneX() {
-        return zoneX;
-    }
-
-    public int zoneY() {
-        return zoneY;
-    }
-
-    public int zoneZ() {
-        return zoneZ;
-    }
-
-    public double zoneRadius() {
-        return zoneRadius;
-    }
-
-    // ---- capture history --------------------------------------------------------------------------
-
-    /** The team currently holding the zone uncontested, or {@code null} (empty or contested). */
-    public String zoneHolderTeam() {
-        return zoneHolderTeam;
-    }
-
-    /**
-     * Records a holder transition - call only when the holder actually changed, not every tick, or
-     * the log fills with duplicate entries a second apart. Trims to {@link #MAX_CAPTURE_HISTORY}.
-     */
-    public void setZoneHolder(String team, List<String> players) {
-        zoneHolderTeam = team;
-        captureHistory.add(new CaptureLogEntry(System.currentTimeMillis(), team, List.copyOf(players)));
+    /** Call ONLY on an actual change of owner - every tick fills the history with duplicates. */
+    public void setPointOwner(String id, String team, List<String> players) {
+        CapturePoint p = getPoint(id);
+        if (p == null) {
+            return;
+        }
+        p.owner = team;
+        p.capturingTeam = null;
+        p.progress = 0;
+        captureHistory.add(new CaptureLogEntry(System.currentTimeMillis(), p.id, team, List.copyOf(players)));
         while (captureHistory.size() > MAX_CAPTURE_HISTORY) {
             captureHistory.remove(0);
         }
         setDirty();
     }
 
-    /** Oldest first. */
+    public void resetPointsToNeutral() {
+        for (CapturePoint p : points.values()) {
+            p.owner = null;
+            p.capturingTeam = null;
+            p.progress = 0;
+        }
+        setDirty();
+    }
+
     public List<CaptureLogEntry> captureHistory() {
         return Collections.unmodifiableList(captureHistory);
     }
 
-    // ---- team bases -------------------------------------------------------------------------------
 
     /** {@code null} if that team has no base set (which means no base restrictions apply to it). */
     public TeamBase getBase(String team) {
@@ -398,7 +388,6 @@ public final class WarState extends SavedData {
         setDirty();
     }
 
-    /** @return whether there was one to remove. */
     public boolean clearBase(String team) {
         if (team != null && bases.remove(team.toLowerCase(Locale.ROOT)) != null) {
             setDirty();
@@ -407,12 +396,10 @@ public final class WarState extends SavedData {
         return false;
     }
 
-    /** Every set base, keyed by lowercased team id. */
     public Map<String, TeamBase> bases() {
         return Collections.unmodifiableMap(bases);
     }
 
-    // ---- persistence -------------------------------------------------------------------------------
 
     public static WarState load(CompoundTag tag, HolderLookup.Provider registries) {
         WarState state = new WarState();
@@ -471,18 +458,28 @@ public final class WarState extends SavedData {
                 state.tickets.put(team, tk.getInt(team));
             }
         }
-        if (tag.contains("zone", Tag.TAG_COMPOUND)) {
+        if (tag.contains("points", Tag.TAG_LIST)) {
+            ListTag pointList = tag.getList("points", Tag.TAG_COMPOUND);
+            for (int i = 0; i < pointList.size(); i++) {
+                CompoundTag p = pointList.getCompound(i);
+                CapturePoint point = state.addPoint(p.getString("id"), p.getString("dim"),
+                        p.getInt("x"), p.getInt("y"), p.getInt("z"), p.getDouble("radius"));
+                if (p.contains("owner", Tag.TAG_STRING)) {
+                    point.owner = p.getString("owner");
+                }
+                if (p.contains("capturing", Tag.TAG_STRING)) {
+                    point.capturingTeam = p.getString("capturing");
+                    point.progress = p.getInt("progress");
+                }
+            }
+        } else if (tag.contains("zone", Tag.TAG_COMPOUND)) {
+            // Migration off the single pre-2026-09-09 marker zone: it becomes point A rather than
+            // silently vanishing from worlds set up before capture points existed.
             CompoundTag z = tag.getCompound("zone");
-            state.zoneDim = z.getString("dim");
-            state.zoneX = z.getInt("x");
-            state.zoneY = z.getInt("y");
-            state.zoneZ = z.getInt("z");
-            state.zoneRadius = z.contains("radius") ? z.getDouble("radius") : 5.0;
+            state.addPoint("A", z.getString("dim"), z.getInt("x"), z.getInt("y"), z.getInt("z"),
+                    z.contains("radius") ? z.getDouble("radius") : 5.0);
         }
 
-        if (tag.contains("zoneHolderTeam", Tag.TAG_STRING)) {
-            state.zoneHolderTeam = tag.getString("zoneHolderTeam");
-        }
         if (tag.contains("captureHistory", Tag.TAG_LIST)) {
             ListTag hist = tag.getList("captureHistory", Tag.TAG_COMPOUND);
             for (int i = 0; i < hist.size(); i++) {
@@ -493,7 +490,9 @@ public final class WarState extends SavedData {
                 for (int j = 0; j < pl.size(); j++) {
                     players.add(pl.getString(j));
                 }
-                state.captureHistory.add(new CaptureLogEntry(h.getLong("t"), team, players));
+                // "point" is absent on entries written before capture points were named.
+                state.captureHistory.add(new CaptureLogEntry(h.getLong("t"), h.getString("point"),
+                        team, players));
             }
         }
 
@@ -549,23 +548,34 @@ public final class WarState extends SavedData {
         CompoundTag tk = new CompoundTag();
         tickets.forEach(tk::putInt);
         tag.put("tickets", tk);
-        if (hasZone()) {
-            CompoundTag z = new CompoundTag();
-            z.putString("dim", zoneDim);
-            z.putInt("x", zoneX);
-            z.putInt("y", zoneY);
-            z.putInt("z", zoneZ);
-            z.putDouble("radius", zoneRadius);
-            tag.put("zone", z);
-        }
+        ListTag pointList = new ListTag();
+        points.forEach((id, point) -> {
+            CompoundTag p = new CompoundTag();
+            p.putString("id", point.id);
+            p.putString("dim", point.dim);
+            p.putInt("x", point.x);
+            p.putInt("y", point.y);
+            p.putInt("z", point.z);
+            p.putDouble("radius", point.radius);
+            // Ownership and a half-filled bar both survive a mid-war restart, same as the round clock.
+            if (point.owner != null) {
+                p.putString("owner", point.owner);
+            }
+            if (point.capturingTeam != null) {
+                p.putString("capturing", point.capturingTeam);
+                p.putInt("progress", point.progress);
+            }
+            pointList.add(p);
+        });
+        tag.put("points", pointList);
 
-        if (zoneHolderTeam != null) {
-            tag.putString("zoneHolderTeam", zoneHolderTeam);
-        }
         ListTag hist = new ListTag();
         captureHistory.forEach(e -> {
             CompoundTag h = new CompoundTag();
             h.putLong("t", e.epochMillis);
+            if (e.point != null) {
+                h.putString("point", e.point);
+            }
             if (e.team != null) {
                 h.putString("team", e.team);
             }

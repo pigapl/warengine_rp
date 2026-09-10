@@ -39,16 +39,12 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Registers every admin-panel payload and handles the inbound ones: event control, team/squad
- * oversight, the kit library, budgets, scarce weapons, bases, and per-player actions.
+ * Registers and handles every admin-panel payload.
  *
  * <p><b>Every inbound handler re-checks op status itself.</b> A raw payload handler gets NO automatic
- * permission gate the way a Brigadier {@code .requires(...)} does - anyone who can connect can send
- * any registered payload. {@code /warstate admin} being op-gated is not a substitute, since a modified
- * client can send these without ever running it. {@link #opPlayerOrNull} is that check.</p>
- *
- * <p>Handlers reuse the same service methods the equivalent commands call, rather than duplicating
- * logic - "one method, every caller".</p>
+ * permission gate the way Brigadier's {@code .requires(...)} does - anyone who can connect can send
+ * any registered payload, and a modified client never has to run {@code /warstate admin} first.
+ * {@link #opPlayerOrNull} is that check.</p>
  */
 public final class AdminNetworking {
     private AdminNetworking() {}
@@ -56,7 +52,6 @@ public final class AdminNetworking {
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
 
-        // ---- event control ----
         registrar.playToServer(ServerboundRequestAdminSnapshotPayload.TYPE,
                 ServerboundRequestAdminSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleRequestSnapshot(context)));
@@ -70,10 +65,9 @@ public final class AdminNetworking {
                 (payload, context) -> context.enqueueWork(() -> handleSetTicketCap(payload, context)));
         registrar.playToServer(ServerboundAdminResetTicketsPayload.TYPE, ServerboundAdminResetTicketsPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleResetTickets(context)));
-        registrar.playToServer(ServerboundAdminTeleportToZonePayload.TYPE, ServerboundAdminTeleportToZonePayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleTeleportToZone(context)));
+        registrar.playToServer(ServerboundAdminTeleportToPointPayload.TYPE, ServerboundAdminTeleportToPointPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleTeleportToPoint(payload, context)));
 
-        // ---- teams/squads ----
         registrar.playToServer(ServerboundRequestAdminTeamsSnapshotPayload.TYPE,
                 ServerboundRequestAdminTeamsSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleRequestTeamsSnapshot(context)));
@@ -95,7 +89,6 @@ public final class AdminNetworking {
         registrar.playToServer(ServerboundAdminMoveToSquadPayload.TYPE, ServerboundAdminMoveToSquadPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleMoveToSquad(payload, context)));
 
-        // ---- team bases ----
         registrar.playToServer(ServerboundAdminSetTeamBasePayload.TYPE, ServerboundAdminSetTeamBasePayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSetTeamBase(payload, context)));
         registrar.playToServer(ServerboundAdminClearTeamBasePayload.TYPE,
@@ -108,7 +101,6 @@ public final class AdminNetworking {
                 ServerboundAdminTeleportAllToBasesPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleTeleportAllToBases(context)));
 
-        // ---- per-player actions ----
         registrar.playToServer(ServerboundAdminTeleportToPlayerPayload.TYPE, ServerboundAdminTeleportToPlayerPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleTeleportToPlayer(payload, context)));
         registrar.playToServer(ServerboundAdminForceKitPayload.TYPE, ServerboundAdminForceKitPayload.STREAM_CODEC,
@@ -116,7 +108,6 @@ public final class AdminNetworking {
         registrar.playToServer(ServerboundAdminForceResupplyPayload.TYPE, ServerboundAdminForceResupplyPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleForceResupply(payload, context)));
 
-        // ---- kit library ----
         registrar.playToServer(ServerboundRequestAdminKitsSnapshotPayload.TYPE,
                 ServerboundRequestAdminKitsSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleRequestKitsSnapshot(context)));
@@ -127,14 +118,12 @@ public final class AdminNetworking {
         registrar.playToServer(ServerboundAdminDeleteKitPayload.TYPE, ServerboundAdminDeleteKitPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleDeleteKit(payload, context)));
 
-        // ---- kit budgets ----
         registrar.playToServer(ServerboundRequestAdminBudgetSnapshotPayload.TYPE,
                 ServerboundRequestAdminBudgetSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleRequestBudgetSnapshot(context)));
         registrar.playToServer(ServerboundAdminSetBudgetPayload.TYPE, ServerboundAdminSetBudgetPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSetBudget(payload, context)));
 
-        // ---- scarce weapons ----
         registrar.playToServer(ServerboundRequestAdminScarceSnapshotPayload.TYPE,
                 ServerboundRequestAdminScarceSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleRequestScarceSnapshot(context)));
@@ -183,7 +172,6 @@ public final class AdminNetworking {
                 });
     }
 
-    // ------------------------------------------------------------------ inbound (client -> server)
 
     /** @return the sender, but only if they are both a real player AND currently op - else {@code null}. */
     private static ServerPlayer opPlayerOrNull(IPayloadContext context) {
@@ -193,7 +181,6 @@ public final class AdminNetworking {
         return player.createCommandSourceStack().hasPermission(2) ? player : null;
     }
 
-    // ---- event control ----
 
     private static void handleRequestSnapshot(IPayloadContext context) {
         ServerPlayer player = opPlayerOrNull(context);
@@ -246,7 +233,6 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(player, buildSnapshot(player.server));
     }
 
-    /** Rezeroes every ticketed team's tickets without ending the war - a manual "reset the score" tool. */
     private static void handleResetTickets(IPayloadContext context) {
         ServerPlayer player = opPlayerOrNull(context);
         if (player == null) {
@@ -259,25 +245,24 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(player, buildSnapshot(player.server));
     }
 
-    private static void handleTeleportToZone(IPayloadContext context) {
+    private static void handleTeleportToPoint(ServerboundAdminTeleportToPointPayload payload,
+                                              IPayloadContext context) {
         ServerPlayer player = opPlayerOrNull(context);
         if (player == null) {
             return;
         }
-        WarState st = WarState.get(player.server);
-        if (!st.hasZone()) {
+        WarState.CapturePoint point = WarState.get(player.server).getPoint(payload.pointId());
+        if (point == null) {
             return;
         }
-        ServerLevel level = player.server.getLevel(ResourceKey.create(
-                Registries.DIMENSION, ResourceLocation.parse(st.zoneDim())));
+        ServerLevel level = RoundService.levelOf(player.server, point);
         if (level == null) {
             return;
         }
-        player.teleportTo(level, st.zoneX() + 0.5, st.zoneY() + 1.0, st.zoneZ() + 0.5,
+        player.teleportTo(level, point.x + 0.5, point.y + 1.0, point.z + 0.5,
                 Set.of(), player.getYRot(), player.getXRot());
     }
 
-    // ---- teams/squads ----
 
     private static void handleRequestTeamsSnapshot(IPayloadContext context) {
         ServerPlayer player = opPlayerOrNull(context);
@@ -287,11 +272,7 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(player, buildTeamsSnapshot(player.server));
     }
 
-    /**
-     * Evicts a squad member - works on an offline target, since a roster tracks by id not presence.
-     * Refreshes the target's squad state, the team's squad list, the old squad's kit catalogs (a slot
-     * freed) and the admin's own teams snapshot.
-     */
+    /** Works on an offline target - a roster tracks by id, not presence. */
     private static void handleKickSquadMember(ServerboundAdminKickSquadMemberPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -302,7 +283,7 @@ public final class AdminNetworking {
         WarState.SquadRecord before = SquadService.getSquad(server, SquadService.getSquadId(server, target));
         String oldSquad = SquadService.kick(server, target);
         if (oldSquad == null) {
-            return; // wasn't in a squad - nothing changed
+            return;
         }
         ServerPlayer targetOnline = server.getPlayerList().getPlayer(target);
         if (targetOnline != null) {
@@ -315,7 +296,6 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
     }
 
-    /** Create-or-recolor - see {@link ServerboundAdminUpsertTeamPayload}'s javadoc. */
     private static void handleUpsertTeam(ServerboundAdminUpsertTeamPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -351,7 +331,6 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(admin.server));
     }
 
-    /** Online players only - moving an offline player's scoreboard team by name is out of scope here. */
     private static void handleMoveToTeam(ServerboundAdminMoveToTeamPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -398,7 +377,6 @@ public final class AdminNetworking {
         }
     }
 
-    /** Online players only - see {@link #handleMoveToTeam}; squad membership needs a live team check anyway. */
     private static void handleMoveToSquad(ServerboundAdminMoveToSquadPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -416,12 +394,8 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
     }
 
-    // ---- team bases ----
 
-    /**
-     * Sets the base to where the ADMIN is standing - the position is read off the sender, never taken
-     * from the payload, so a modified client cannot drop a base at arbitrary coordinates.
-     */
+    /** Position is read off the sender, never the payload - a modified client cannot pick coordinates. */
     private static void handleSetTeamBase(ServerboundAdminSetTeamBasePayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -474,7 +448,6 @@ public final class AdminNetworking {
                 admin.getGameProfile().getName(), moved);
     }
 
-    // ---- per-player actions ----
 
     private static void handleTeleportToPlayer(ServerboundAdminTeleportToPlayerPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
@@ -489,7 +462,6 @@ public final class AdminNetworking {
                 Set.of(), target.getYRot(), target.getXRot());
     }
 
-    /** Bypasses team/squad/limit checks entirely - an admin override, not a self-pick. */
     private static void handleForceKit(ServerboundAdminForceKitPayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -526,7 +498,6 @@ public final class AdminNetworking {
         }
     }
 
-    // ---- kit library ----
 
     private static void handleRequestKitsSnapshot(IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
@@ -601,7 +572,6 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildKitsSnapshot(server));
     }
 
-    /** Refreshes every online player whose team may use {@code kitId} - mirrors {@code KitCommand}'s resend helpers. */
     private static void refreshCatalogsForKit(MinecraftServer server, String kitId) {
         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
             String theirTeam = TeamService.getTeam(server, online);
@@ -611,7 +581,6 @@ public final class AdminNetworking {
         }
     }
 
-    // ---- kit budgets ----
 
     private static void handleRequestBudgetSnapshot(IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
@@ -647,7 +616,6 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildBudgetSnapshot(server));
     }
 
-    // ---- scarce weapons ----
 
     private static void handleRequestScarceSnapshot(IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
@@ -684,9 +652,7 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildScarceSnapshot());
     }
 
-    // ------------------------------------------------------------------ snapshot building
 
-    /** Builds a fresh {@link ClientboundAdminSnapshotPayload} from current server state. */
     public static ClientboundAdminSnapshotPayload buildSnapshot(MinecraftServer server) {
         WarState st = WarState.get(server);
         long timeLeft = st.roundActive() ? Math.max(0L, st.roundEndEpochMillis() - System.currentTimeMillis()) : 0L;
@@ -703,31 +669,30 @@ public final class AdminNetworking {
             teams.add(new AdminTeamInfo(team, accentFor(live), st.getTickets(team), online));
         }
 
-        Map<String, List<String>> occupants = RoundService.zoneOccupantsByTeam(server, st);
-        String holder = occupants.size() == 1 ? occupants.keySet().iterator().next() : null;
-        boolean contested = occupants.size() >= 2;
-        List<String> holderPlayers = holder != null ? occupants.get(holder)
-                : occupants.values().stream().flatMap(List::stream).toList();
-
-        AdminZone zone = new AdminZone(st.hasZone(), st.hasZone() ? st.zoneDim() : "",
-                st.hasZone() ? st.zoneX() : 0, st.hasZone() ? st.zoneY() : 0, st.hasZone() ? st.zoneZ() : 0,
-                st.hasZone() ? st.zoneRadius() : 0.0);
-        AdminZoneStatus status = new AdminZoneStatus(holder == null ? "" : holder, holderPlayers, contested);
+        int captureTotal = WarConfig.CAPTURE_SECONDS.get();
+        List<AdminPointInfo> points = new ArrayList<>();
+        for (WarState.CapturePoint p : st.points()) {
+            // Same occupancy rule the scoring uses - never a second implementation that could drift.
+            Map<String, List<String>> occupants = RoundService.occupantsByTeam(server, p);
+            List<String> inside = occupants.values().stream().flatMap(List::stream).toList();
+            points.add(new AdminPointInfo(
+                    new AdminPointLoc(p.id, p.dim, p.x, p.y, p.z, p.radius),
+                    new AdminPointStatus(p.owner == null ? "" : p.owner,
+                            p.capturingTeam == null ? "" : p.capturingTeam,
+                            p.progress, captureTotal, occupants.size() >= 2, inside)));
+        }
 
         List<AdminHistoryEntry> history = new ArrayList<>();
         for (WarState.CaptureLogEntry e : st.captureHistory()) {
-            history.add(new AdminHistoryEntry(e.epochMillis, e.team == null ? "" : e.team, e.players));
+            history.add(new AdminHistoryEntry(e.epochMillis, e.point == null ? "" : e.point,
+                    e.team == null ? "" : e.team, e.players));
         }
 
         return new ClientboundAdminSnapshotPayload(st.roundActive(), timeLeft, WarConfig.ROUND_TICKET_CAP.get(),
-                teams, new AdminZoneBundle(zone, status), history);
+                teams, points, history);
     }
 
-    /**
-     * Builds a fresh {@link ClientboundAdminTeamsSnapshotPayload}: every team with its ONLINE members,
-     * and every squad with its FULL roster including offline ones - a squad roster is a persistent
-     * membership, so an admin pruning stale members has to see them.
-     */
+    /** Teams list ONLINE members; squads list their FULL roster, so an admin can prune stale ones. */
     public static ClientboundAdminTeamsSnapshotPayload buildTeamsSnapshot(MinecraftServer server) {
         WarState st = WarState.get(server);
 
@@ -762,7 +727,6 @@ public final class AdminNetworking {
         return new ClientboundAdminTeamsSnapshotPayload(teams, squads);
     }
 
-    /** The whole kit library (not team/squad scoped, unlike {@code KitCatalogEntry}), plus every team id + "*". */
     public static ClientboundAdminKitsSnapshotPayload buildKitsSnapshot(MinecraftServer server) {
         List<AdminKitInfo> kits = new ArrayList<>();
         for (String id : KitStorage.ids().stream().sorted().toList()) {
@@ -786,10 +750,6 @@ public final class AdminNetworking {
         return new ClientboundAdminScarceSnapshotPayload(List.copyOf(ScarceItems.all()));
     }
 
-    /**
-     * One row per {@code (team, kit)} for the Kit Budgets screen: every kit a team may use ({@code "*"}
-     * included) plus any it already budgets, with the total and what its squads reserved.
-     */
     public static ClientboundAdminBudgetSnapshotPayload buildBudgetSnapshot(MinecraftServer server) {
         List<AdminBudgetRow> rows = new ArrayList<>();
         for (String team : TeamService.ids(server)) {
@@ -805,10 +765,7 @@ public final class AdminNetworking {
         return new ClientboundAdminBudgetSnapshotPayload(rows);
     }
 
-    /**
-     * A roster stores only ids, so an offline member needs a name looked up. Falls back to a truncated
-     * id rather than failing - not worth losing the ability to kick someone over a cache miss.
-     */
+    /** Falls back to a truncated id - not worth losing the ability to kick someone over a cache miss. */
     private static String resolveName(MinecraftServer server, UUID id) {
         ServerPlayer online = server.getPlayerList().getPlayer(id);
         if (online != null) {

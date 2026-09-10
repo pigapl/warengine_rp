@@ -16,16 +16,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Kit picker, drawn as a card grid. Reads {@link ClientKitCache#catalog()}, which the server pushes
- * on team assignment and refreshes whenever slot counts change, so this needs no request of its own.
- *
- * <p>A full kit is drawn disabled, but that is only convenience - {@code KitService.assign}
- * re-checks the limit server-side regardless of what the client believes.</p>
- */
 public final class KitPickerScreen extends Screen {
 
-    private static final int ACCENT = 0xFF5AC46A;   // your current kit
+    private static final int ACCENT = 0xFF5AC46A;
     private static final int ACCENT_FULL = 0xFFC45A5A;
 
     private PickerLayout.Grid grid;
@@ -35,10 +28,7 @@ public final class KitPickerScreen extends Screen {
         super(Component.literal("Pick your Kit"));
     }
 
-    /**
-     * Rebuilds on a server push - otherwise a kit whose last slot a squad-mate just took keeps
-     * rendering as clickable, and the click is rejected server-side for no visible reason.
-     */
+    /** Rebuilds on a server push, or a kit whose last slot just went keeps rendering as clickable. */
     @Override
     public void tick() {
         if (lastSeenRevision != ClientKitCache.revision()) {
@@ -88,7 +78,6 @@ public final class KitPickerScreen extends Screen {
         return Component.literal(kit.availability().taken() + " / " + kit.availability().limit());
     }
 
-    /** Hover tooltip: the description plus what is actually in the kit. */
     private static Component describe(KitCatalogEntry kit) {
         List<String> lines = new ArrayList<>();
         if (!kit.description().isEmpty()) {
@@ -123,10 +112,6 @@ public final class KitPickerScreen extends Screen {
         onClose();
     }
 
-    /**
-     * Way back to the squad picker. Without it the earlier steps are unreachable once you hold a kit,
-     * since the keybind only opens whichever screen you currently owe - this one.
-     */
     private void addChangeSquadButton() {
         int buttonWidth = 100;
         addRenderableWidget(Button.builder(Component.literal("Change Squad"),
@@ -135,8 +120,7 @@ public final class KitPickerScreen extends Screen {
                 .build());
     }
 
-    /** Panel drawn here, not in render - {@code Screen.render} calls renderBackground itself, which
-     *  would put the vanilla dim pass on top and darken the panel twice. */
+    /** Drawn here, not in render - {@code Screen.render} would dim the panel a second time. */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);

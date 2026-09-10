@@ -25,19 +25,22 @@ base-mod payload handler to the client addon's tick loop, which is the only plac
 
 ## What the screen shows
 
-- **Status bar**: `WAR RUNNING - 4:32 left - first to 60 tickets` / `NO WAR RUNNING`.
+- **Status bar**: `WAR RUNNING - 4:32 left - first to 500 tickets` / `NO WAR RUNNING`.
 - **Start War (5m/10m/20m presets) / Stop War** buttons - send `ServerboundAdminStartWarPayload`/
   `ServerboundAdminEndWarPayload`, which call the exact same `RoundService.start`/`end` the `/war`
   command tree calls (no parallel logic to drift).
 - **Teams panel**: per team - colour swatch (from the scoreboard, same as the team picker), ticket
   count, online player count, and the online player names (wrapped).
-- **Capture Zone panel**: location/radius/dimension, and who holds it RIGHT NOW - `Held by <team> -
-  <names>`, `CONTESTED - <names>`, or `Empty`. Computed by the exact same rule
-  `RoundService.tickCaptureZone` scores by (`RoundService.zoneOccupantsByTeam`, made public for
-  this reason) - never a second implementation that could quietly disagree with what actually scores.
-- **History panel** (scroll to browse, newest first): every time the zone's holder actually changed
-  - `[14:03:11] RED took it (Steve, Alex)`, `[14:05:40] vacated / contested`. This is the "who had
-  it, what person" log the user asked for.
+- **Capture Points panel** (rewritten 2026-09-09 for N points): one row per point - id, owner,
+  coordinates and radius, plus what is happening on it RIGHT NOW (`CONTESTED - <names>`,
+  `<team> capturing 12/30 (<names>)`, `held - <names>`, or `nobody inside`) and a per-point `TP`
+  button. Occupancy is computed by the exact same rule `RoundService.tickCapturePoints` scores by
+  (`RoundService.occupantsByTeam`, public for this reason) - never a second implementation that could
+  quietly disagree with what actually scores. Row Y positions come from one shared
+  `forEachVisiblePointRow` visitor used by both `init` (buttons) and `render` (text).
+- **History panel** (scroll to browse, newest first): every time a point actually changed hands -
+  `[14:03:11] A taken by RED (Steve, Alex)`, `[14:05:40] B went neutral`. This is the "who had it,
+  what person" log the user asked for.
 
 ## Live data, not push
 
@@ -49,13 +52,14 @@ is pushed to an admin who isn't looking. Same "no clean change event, so poll" r
 
 ## The capture history log (new WarState data)
 
-`WarState` gained `zoneHolderTeam` (live, nullable) and a bounded `captureHistory` list (last 50
-transitions, oldest evicted first), both persisted with the world. `RoundService.tickCaptureZone`
-recomputes the holder every second (as it already did for scoring) but appends a
-`WarState.CaptureLogEntry` only when the holder actually CHANGES from the previous tick - not one
-entry per second. An entry records the epoch millis, the new holder (`null` = went
-empty/contested), and the player names present at that moment (the holder's, or everyone's if the
-transition was into a contested state).
+`WarState` holds a bounded `captureHistory` list (last 50 flips, oldest evicted first), persisted
+with the world. `RoundService.tickCapturePoints` recomputes every point's state each second (as it
+already does for scoring) but `WarState.setPointOwner` appends a `WarState.CaptureLogEntry` only on
+an actual flip - not one entry per second. An entry records the epoch millis, which point, the new
+owner (`null` = went neutral) and the player names present at that moment.
+
+Since 2026-09-09 each entry also carries the point id. Entries written before that load with an
+empty id and render without one, rather than failing to load.
 
 ## Security note: payload handlers self-check op status
 
@@ -153,5 +157,6 @@ kick-from-server (explicitly excluded by the user - "not needed").
 
 ## Known gaps / next
 
-- No zone set/clear from either panel - still `/war setzone` (needs standing at the location anyway).
+- No point add/remove from either panel - still `/war point add|remove` (adding needs you standing at
+  the location anyway). The panel does offer a per-point `TP`.
 - Not yet tested in-game (compiles + assembles clean in both projects as of 2026-09-03).

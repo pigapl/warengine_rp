@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's live ticket-cap editor - writes {@code round.ticketCap} at runtime (persists to the toml). */
 public record ServerboundAdminSetTicketCapPayload(int cap) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminSetTicketCapPayload> TYPE =

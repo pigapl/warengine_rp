@@ -5,6 +5,7 @@ import com.pigapl.warengine.network.ClientboundAdminScarceSnapshotPayload;
 import com.pigapl.warengine.network.ClientboundAdminSnapshotPayload;
 import com.pigapl.warengine.network.ClientboundAdminBudgetSnapshotPayload;
 import com.pigapl.warengine.network.ClientboundAdminTeamsSnapshotPayload;
+import com.pigapl.warengine.network.ClientboundCapturePointsPayload;
 import com.pigapl.warengine.network.ClientboundKitBudgetPayload;
 import com.pigapl.warengine.network.ClientboundKitCatalogPayload;
 import com.pigapl.warengine.network.ClientboundKitStatePayload;
@@ -13,10 +14,6 @@ import com.pigapl.warengine.network.ClientboundSquadListPayload;
 import com.pigapl.warengine.network.ClientboundSquadStatePayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/**
- * Client-side reception: writes into {@link ClientKitCache} / {@link ClientSquadCache}, nothing more.
- * UI logic lives in the client addon, which reads those caches.
- */
 public final class ClientPayloadHandlers {
     private ClientPayloadHandlers() {}
 
@@ -62,5 +59,9 @@ public final class ClientPayloadHandlers {
 
     public static void handleAdminBudgetSnapshot(ClientboundAdminBudgetSnapshotPayload payload, IPayloadContext context) {
         ClientAdminCache.setBudgetSnapshot(payload);
+    }
+
+    public static void handleCapturePoints(ClientboundCapturePointsPayload payload, IPayloadContext context) {
+        ClientCapturePointCache.set(payload);
     }
 }

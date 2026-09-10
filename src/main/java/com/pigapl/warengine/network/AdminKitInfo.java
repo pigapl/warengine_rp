@@ -7,7 +7,6 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
-/** One kit's row in the admin Kit Library screen - the whole library, not team/squad scoped like {@link KitCatalogEntry}. */
 public record AdminKitInfo(String id, String displayName, ItemStack icon, int limit, List<String> assignedTeams) {
 
     public static final StreamCodec<RegistryFriendlyByteBuf, AdminKitInfo> STREAM_CODEC = StreamCodec.composite(

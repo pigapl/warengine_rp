@@ -9,14 +9,8 @@ import net.minecraft.network.chat.Component;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * Generic "pick one of these" overlay, shared by several admin actions that need a small selection
- * step - move a player to a different team/squad, force-assign a kit - rather than each getting its
- * own bespoke screen. Wraps into columns if there are more entries than fit in one.
- */
 public final class AdminPickScreen extends Screen {
 
-    /** One selectable row. */
     public record Entry(String id, String label) {}
 
     private static final int ROW_HEIGHT = 24;

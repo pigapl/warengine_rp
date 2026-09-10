@@ -3,11 +3,8 @@ package com.pigapl.warengine.client.gui;
 import net.minecraft.client.gui.GuiGraphics;
 
 /**
- * Grid maths and the panel backdrop shared by both pickers.
- *
- * <p>Card size adapts down until the whole grid fits, because the number of kits is admin-driven
- * (10-15 is expected but nothing enforces it) and GUI scale varies a lot between players - a fixed
- * card size would push the bottom row off-screen for someone at scale 3.</p>
+ * Grid maths and the panel backdrop shared by both pickers. Card size adapts down until the grid
+ * fits - kit count is admin-driven and GUI scale varies, so a fixed size loses the bottom row.
  */
 public final class PickerLayout {
 
@@ -22,7 +19,6 @@ public final class PickerLayout {
 
     private PickerLayout() {}
 
-    /** Chosen grid geometry: how big each card is and how many fit per row. */
     public record Grid(int cardWidth, int cardHeight, int columns, int rows, int originX, int originY) {
         public int xFor(int index) {
             return originX + (index % columns) * (cardWidth + GAP);
@@ -41,10 +37,7 @@ public final class PickerLayout {
         }
     }
 
-    /**
-     * Picks the largest card size (down to a floor) at which {@code count} cards fit the screen,
-     * then centres the resulting grid.
-     */
+    /** Largest card size (down to a floor) at which {@code count} cards fit, then centred. */
     public static Grid solve(int count, int screenWidth, int screenHeight) {
         int availableWidth = screenWidth - 40;
         int availableHeight = screenHeight - TOP_RESERVED - BOTTOM_RESERVED;
@@ -62,8 +55,7 @@ public final class PickerLayout {
             }
         }
 
-        // Even at the smallest size it overflows (a lot of kits on a small window) - use the floor
-        // and let the grid start right under the title rather than centring it off-screen.
+        // Overflows even at the floor size - start under the title rather than centring off-screen.
         int cardWidth = 56;
         int cardHeight = 48;
         int columns = Math.max(1, Math.min(count, (availableWidth + GAP) / (cardWidth + GAP)));
@@ -73,7 +65,6 @@ public final class PickerLayout {
                 (screenWidth - gridWidth) / 2, TOP_RESERVED);
     }
 
-    /** Draws the backdrop panel behind a grid. */
     public static void drawPanel(GuiGraphics graphics, Grid grid) {
         int pad = 12;
         int left = grid.originX() - pad;

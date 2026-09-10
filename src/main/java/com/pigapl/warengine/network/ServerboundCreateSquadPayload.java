@@ -10,11 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Client asks to found a squad on their own team, and join it. {@code reservations} (kit id -&gt;
- * count) is how many of each budgeted kit it claims from the team's budget; empty when the team has
- * none. The server re-validates every entry - see {@code SquadService#create}.
- */
+/** The server re-validates every reservation - see {@code SquadService#create}. */
 public record ServerboundCreateSquadPayload(String name, int limit, Map<String, Integer> reservations)
         implements CustomPacketPayload {
 

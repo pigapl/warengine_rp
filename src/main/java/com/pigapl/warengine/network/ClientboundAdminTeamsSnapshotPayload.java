@@ -9,12 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/**
- * Full team + squad roster detail for the admin panel's Teams &amp; Squads screen - every team
- * server-wide with its online members, and every squad server-wide with its full roster (online or
- * not) and each member's assigned kit. Sent in reply to
- * {@link ServerboundRequestAdminTeamsSnapshotPayload}.
- */
 public record ClientboundAdminTeamsSnapshotPayload(List<AdminTeamDetail> teams, List<AdminSquadDetail> squads)
         implements CustomPacketPayload {
 

@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.List;
 
-/** One team's row in the admin snapshot. */
 public record AdminTeamInfo(String team, int colorArgb, int tickets, List<String> onlinePlayers) {
 
     public static final StreamCodec<ByteBuf, AdminTeamInfo> STREAM_CODEC = StreamCodec.composite(

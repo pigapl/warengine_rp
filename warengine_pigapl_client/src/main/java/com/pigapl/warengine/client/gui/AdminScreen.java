@@ -2,8 +2,7 @@ package com.pigapl.warengine.client.gui;
 
 import com.pigapl.warengine.network.AdminHistoryEntry;
 import com.pigapl.warengine.network.AdminTeamInfo;
-import com.pigapl.warengine.network.AdminZone;
-import com.pigapl.warengine.network.AdminZoneStatus;
+import com.pigapl.warengine.network.AdminPointInfo;
 import com.pigapl.warengine.network.ClientboundAdminSnapshotPayload;
 import com.pigapl.warengine.network.ServerboundAdminAdjustTimePayload;
 import com.pigapl.warengine.network.ServerboundAdminEndWarPayload;
@@ -11,7 +10,7 @@ import com.pigapl.warengine.network.ServerboundAdminResetTicketsPayload;
 import com.pigapl.warengine.network.ServerboundAdminSetTicketCapPayload;
 import com.pigapl.warengine.network.ServerboundAdminStartWarPayload;
 import com.pigapl.warengine.network.ServerboundAdminTeleportAllToBasesPayload;
-import com.pigapl.warengine.network.ServerboundAdminTeleportToZonePayload;
+import com.pigapl.warengine.network.ServerboundAdminTeleportToPointPayload;
 import com.pigapl.warengine.network.ServerboundRequestAdminSnapshotPayload;
 import com.pigapl.warengine.network.client.ClientAdminCache;
 import net.minecraft.ChatFormatting;
@@ -31,15 +30,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-/**
- * The admin panel: start/stop the war, plus a live read-only view of tickets, rosters, the capture
- * zone and its history.
- *
- * <p>Opened only by the server's {@link com.pigapl.warengine.network.ClientboundOpenAdminScreenPayload}
- * ({@code /warstate admin}) - unlike the pickers, there is no state to auto-derive "you owe this
- * screen" from. Polls {@link ServerboundRequestAdminSnapshotPayload} once a second while open;
- * {@code render} reads {@link ClientAdminCache} live rather than caching a copy.</p>
- */
 public final class AdminScreen extends Screen {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT);
@@ -47,21 +37,22 @@ public final class AdminScreen extends Screen {
     private static final int POLL_INTERVAL_TICKS = 20;
     private static final int LINE_HEIGHT = 10;
 
+    private static final int POINTS_PANEL_TOP = 46;
+    private static final int POINT_ROW_HEIGHT = 22;
+    private static final int POINT_TP_WIDTH = 26;
+
     private static final int CONTROL_ROW_HEIGHT = 20;
     private static final int CONTROL_GAP = 4;
 
     private int pollTicks = 0;
-    private int historyScroll = 0; // lines scrolled down from the newest entry
+    private int historyScroll = 0;
 
     private EditBox ticketCapBox;
 
-    /** Top of the (possibly multi-row) bottom control block - panels above must not draw past it.
-     *  Computed in {@link #init}, read by {@link #render}: one source of truth. */
     private int controlsTop;
 
-    /** For the live flash on a zone-holder change - see {@link #tick}. */
-    private String lastHolderSeen = null;
-    private boolean holderInitialized = false;
+    private String lastOwnersSeen = null;
+    private String lastPointIdsSeen = null;
     private int flashTicks = 0;
 
     public AdminScreen() {
@@ -80,7 +71,6 @@ public final class AdminScreen extends Screen {
         layoutControls(startY, true);
         controlsTop = startY - 6;
 
-        // Ticket cap editor, tucked in the corner clear of the centered title/status text.
         ticketCapBox = new EditBox(font, width - 20 - 96, 8, 40, 16, Component.literal("Cap"));
         ticketCapBox.setMaxLength(6);
         ticketCapBox.setFilter(s -> s.isEmpty() || s.chars().allMatch(Character::isDigit));
@@ -92,22 +82,30 @@ public final class AdminScreen extends Screen {
                         PacketDistributor.sendToServer(
                                 new ServerboundAdminSetTicketCapPayload(Integer.parseInt(ticketCapBox.getValue().trim())));
                     } catch (NumberFormatException ignored) {
-                        // empty/invalid entry - just don't send
                     }
                 })
                 .bounds(width - 20 - 52, 6, 52, 20).build());
+
+        addPointButtons();
+    }
+
+    private void addPointButtons() {
+        ClientboundAdminSnapshotPayload snap = ClientAdminCache.snapshot();
+        if (snap == null || snap.points().isEmpty()) {
+            return;
+        }
+        int right = width - 20;
+        forEachVisiblePointRow(snap.points(), POINTS_PANEL_TOP, pointsBottom(), (point, y) ->
+                addRenderableWidget(Button.builder(Component.literal("TP"),
+                                b -> PacketDistributor.sendToServer(
+                                        new ServerboundAdminTeleportToPointPayload(point.loc().id())))
+                        .bounds(pointButtonsX(right), y - 2, POINT_TP_WIDTH, 18).build()));
     }
 
     /**
-     * Places (or, with {@code createWidgets = false}, just measures) the bottom controls as two rows,
-     * each a left-anchored cluster + centered item + right-anchored item.
-     *
-     * <p>{@link #planRow} places left and right unconditionally and squeezes the center item into the
-     * room actually left between them - centered in THAT gap, not dead-centre on screen. Demanding
-     * true centering needed ~600px before anything shared a row, and dropped all three to separate
-     * rows below that.</p>
-     *
-     * @return the Y just past the bottom of the last row placed
+     * Places, or with {@code createWidgets = false} just measures, the bottom controls.
+     * {@link #planRow} centers the middle item in the gap between the anchored groups, not on screen -
+     * true centering needed ~600px before anything shared a row.
      */
     private int layoutControls(int startY, boolean createWidgets) {
         int rowH = CONTROL_ROW_HEIGHT;
@@ -116,7 +114,6 @@ public final class AdminScreen extends Screen {
         int rightEdge = width - 20;
         int y = startY;
 
-        // Row 1: [Start 5m][Start 10m][Start 20m] left | Teams & Squads centered | Stop War right.
         int[] plan1 = planRow(70 * 3 + gap * 2, 120, 90);
         int x = leftX;
         for (int minutes : START_PRESETS_MIN) {
@@ -139,9 +136,7 @@ public final class AdminScreen extends Screen {
         }
         y += (Math.max(plan1[0], plan1[1]) + 1) * (rowH + gap);
 
-        // Row 2: [Kit Library][Scarce Weapons][Kit Budgets] left | -5m/+5m/TP to Zone/TP All to Bases
-        // centered | Reset Tickets right.
-        int centerWidth2 = 36 + gap + 36 + gap + 84 + gap + 110;
+        int centerWidth2 = 36 + gap + 36 + gap + 110;
         int[] plan2 = planRow(90 + gap + 110 + gap + 100, centerWidth2, 100);
         int x2 = leftX;
         if (createWidgets) {
@@ -176,13 +171,6 @@ public final class AdminScreen extends Screen {
         }
         cx += 36 + gap;
         if (createWidgets) {
-            addRenderableWidget(Button.builder(Component.literal("TP to Zone"),
-                            b -> PacketDistributor.sendToServer(new ServerboundAdminTeleportToZonePayload()))
-                    .bounds(cx, cy, 84, rowH).build());
-        }
-        cx += 84 + gap;
-        if (createWidgets) {
-            // Sends every online player to their own team's base (Teams & Squads -> Base sets those).
             addRenderableWidget(Button.builder(Component.literal("TP All to Bases"),
                             b -> PacketDistributor.sendToServer(new ServerboundAdminTeleportAllToBasesPayload()))
                     .bounds(cx, cy, 110, rowH).build());
@@ -197,26 +185,19 @@ public final class AdminScreen extends Screen {
         return y - gap;
     }
 
-    /**
-     * @return {centerRowOffset, rightRowOffset, centerX} - how many rows below the left cluster the
-     * center and right items each need (0 = same row), and the X to draw the center item at.
-     */
     private int[] planRow(int leftWidth, int centerWidth, int rightWidth) {
         int gap = CONTROL_GAP;
         int leftEnd = 20 + leftWidth;
         int rightStart = (width - 20) - rightWidth;
 
         if (leftEnd + gap > rightStart - gap) {
-            // Left and right themselves collide - very narrow window. All three get their own row.
             return new int[]{1, 2, width / 2 - centerWidth / 2};
         }
         int gapAvailable = (rightStart - gap) - (leftEnd + gap);
         if (gapAvailable >= centerWidth) {
-            // Common case: centered in the gap between the anchored groups, not on the whole screen.
             int centerX = (leftEnd + gap) + (gapAvailable - centerWidth) / 2;
             return new int[]{0, 0, centerX};
         }
-        // Left and right coexist, but nothing fits between - only the center item drops a row.
         return new int[]{1, 0, width / 2 - centerWidth / 2};
     }
 
@@ -229,14 +210,34 @@ public final class AdminScreen extends Screen {
 
         ClientboundAdminSnapshotPayload snap = ClientAdminCache.snapshot();
         if (snap != null) {
-            String holder = snap.zoneBundle().status().holderTeam();
-            if (!holderInitialized) {
-                holderInitialized = true;
-                lastHolderSeen = holder;
-            } else if (!Objects.equals(holder, lastHolderSeen)) {
-                lastHolderSeen = holder;
-                flashTicks = 40; // ~2s at 20 ticks/s
+            StringBuilder owners = new StringBuilder();
+            for (AdminPointInfo p : snap.points()) {
+                owners.append(p.loc().id()).append('=').append(p.status().owner()).append(';');
             }
+            String signature = owners.toString();
+            if (lastOwnersSeen != null && !Objects.equals(signature, lastOwnersSeen)) {
+                flashTicks = 40;
+            }
+            lastOwnersSeen = signature;
+
+            // Only the SET of points forces a rebuild (a point added or removed needs its own TP
+            // button); owner and progress changes are drawn live and must not tear down widgets.
+            StringBuilder ids = new StringBuilder();
+            for (AdminPointInfo p : snap.points()) {
+                ids.append(p.loc().id()).append(';');
+            }
+            String idSignature = ids.toString();
+            if (lastPointIdsSeen != null && !idSignature.equals(lastPointIdsSeen)) {
+                // Poll-triggered rebuildWidgets() wipes an EditBox mid-type, so save and restore it.
+                String cap = ticketCapBox.getValue();
+                boolean focused = ticketCapBox.isFocused();
+                rebuildWidgets();
+                ticketCapBox.setValue(cap);
+                if (focused) {
+                    setFocused(ticketCapBox);
+                }
+            }
+            lastPointIdsSeen = idSignature;
         }
         if (flashTicks > 0) {
             flashTicks--;
@@ -271,14 +272,13 @@ public final class AdminScreen extends Screen {
 
         drawStatus(graphics, snap, 30);
 
-        int panelTop = 46;
-        int panelBottom = controlsTop; // wherever the (possibly wrapped) bottom control block starts
+        int panelTop = POINTS_PANEL_TOP;
+        int panelBottom = controlsTop;
         int midX = width / 2;
 
         drawTeams(graphics, snap, 20, panelTop, midX - 6, panelBottom);
-        int zoneBottom = panelTop + 88;
-        drawZone(graphics, snap, midX + 6, panelTop, width - 20, zoneBottom);
-        drawHistory(graphics, snap, midX + 6, zoneBottom + 6, width - 20, panelBottom);
+        drawPoints(graphics, snap, midX + 6, panelTop, width - 20, pointsBottom());
+        drawHistory(graphics, snap, midX + 6, pointsBottom() + 6, width - 20, panelBottom);
     }
 
     private void drawStatus(GuiGraphics graphics, ClientboundAdminSnapshotPayload snap, int y) {
@@ -320,44 +320,73 @@ public final class AdminScreen extends Screen {
         }
     }
 
-    private void drawZone(GuiGraphics graphics, ClientboundAdminSnapshotPayload snap,
-                          int left, int top, int right, int bottom) {
-        drawPanel(graphics, left, top, right, bottom, "Capture Zone");
+    private int pointsBottom() {
+        return POINTS_PANEL_TOP + 88;
+    }
+
+    /**
+     * Called from BOTH {@link #init} (to place TP buttons) and {@link #drawPoints} (to draw text).
+     * Every caller must pass the SAME arguments - that is the half this screen has gotten wrong before.
+     */
+    private void forEachVisiblePointRow(List<AdminPointInfo> points, int top, int bottom,
+                                        java.util.function.ObjIntConsumer<AdminPointInfo> row) {
         int y = top + 16;
-        AdminZone zone = snap.zoneBundle().zone();
-        if (!zone.hasZone()) {
-            graphics.drawString(font, "Not set - /war setzone", left + 6, y, PickerLayout.HINT_COLOR);
+        for (AdminPointInfo point : points) {
+            if (y + POINT_ROW_HEIGHT > bottom) {
+                return;
+            }
+            row.accept(point, y);
+            y += POINT_ROW_HEIGHT;
+        }
+    }
+
+    private void drawPoints(GuiGraphics graphics, ClientboundAdminSnapshotPayload snap,
+                            int left, int top, int right, int bottom) {
+        drawPanel(graphics, left, top, right, bottom, "Capture Points");
+        List<AdminPointInfo> points = snap.points();
+        if (points.isEmpty()) {
+            graphics.drawString(font, "None - /war point add <id>", left + 6, top + 16,
+                    PickerLayout.HINT_COLOR);
             return;
         }
-        graphics.drawString(font, zone.x() + " " + zone.y() + " " + zone.z() + "   r=" + zone.radius()
-                + "   (" + zone.dim() + ")", left + 6, y, PickerLayout.HINT_COLOR);
-        y += LINE_HEIGHT;
 
-        AdminZoneStatus status = snap.zoneBundle().status();
-        String line;
-        int color;
-        if (status.contested()) {
-            line = "CONTESTED - " + (status.holderPlayers().isEmpty() ? "" : String.join(", ", status.holderPlayers()));
-            color = 0xFFC45A5A;
-        } else if (!status.holderTeam().isEmpty()) {
-            line = "Held by " + status.holderTeam() + " - " + String.join(", ", status.holderPlayers());
-            color = 0xFF5AC46A;
-        } else {
-            line = "Empty - nobody inside";
-            color = PickerLayout.HINT_COLOR;
-        }
+        forEachVisiblePointRow(points, top, bottom, (point, y) -> {
+            String owner = point.status().owner();
+            String head = point.loc().id() + "  " + (owner.isEmpty() ? "neutral" : owner)
+                    + "   " + point.loc().x() + " " + point.loc().y() + " " + point.loc().z()
+                    + " r=" + point.loc().radius();
+            graphics.drawString(font,
+                    font.plainSubstrByWidth(head, pointButtonsX(right) - (left + 6) - 4),
+                    left + 6, y, owner.isEmpty() ? PickerLayout.HINT_COLOR : 0xFFFFFFFF);
 
-        // Blinking highlight on a holder change, so an admin glancing at the panel notices.
-        if (flashTicks > 0 && (flashTicks / 4) % 2 == 0) {
-            graphics.fill(left + 2, y - 1, right - 2, y + LINE_HEIGHT - 2, 0x55FFFF55);
-        }
-        for (FormattedCharSequence l : wrap(line, right - left - 12)) {
-            if (y > bottom - LINE_HEIGHT) {
-                break;
+            String line;
+            int color;
+            if (point.status().contested()) {
+                line = "CONTESTED - " + String.join(", ", point.status().occupants());
+                color = 0xFFC45A5A;
+            } else if (!point.status().capturing().isEmpty()) {
+                line = point.status().capturing() + " capturing  " + point.status().progress()
+                        + "/" + point.status().captureTotal()
+                        + "  (" + String.join(", ", point.status().occupants()) + ")";
+                color = 0xFFD8B24A;
+            } else if (!point.status().occupants().isEmpty()) {
+                line = "held - " + String.join(", ", point.status().occupants());
+                color = 0xFF5AC46A;
+            } else {
+                line = "nobody inside";
+                color = PickerLayout.HINT_COLOR;
             }
-            graphics.drawString(font, l, left + 6, y, color);
-            y += LINE_HEIGHT;
-        }
+
+            if (flashTicks > 0 && (flashTicks / 4) % 2 == 0) {
+                graphics.fill(left + 2, y - 1, right - 2, y + POINT_ROW_HEIGHT - 3, 0x55FFFF55);
+            }
+            graphics.drawString(font, font.plainSubstrByWidth(line, right - left - 12),
+                    left + 6, y + LINE_HEIGHT, color);
+        });
+    }
+
+    private int pointButtonsX(int right) {
+        return right - 6 - POINT_TP_WIDTH;
     }
 
     private void drawHistory(GuiGraphics graphics, ClientboundAdminSnapshotPayload snap,
@@ -380,9 +409,11 @@ public final class AdminScreen extends Screen {
         for (int i = startIndex; i >= 0 && y < bottom; i--) {
             AdminHistoryEntry e = history.get(i);
             String time = TIME_FMT.format(Instant.ofEpochMilli(e.epochMillis()).atZone(ZoneId.systemDefault()));
-            String who = e.team().isEmpty() ? "vacated / contested" : e.team().toUpperCase(Locale.ROOT) + " took it";
+            String point = e.point().isEmpty() ? "" : e.point() + " ";
+            String who = e.team().isEmpty() ? "went neutral" : "taken by " + e.team().toUpperCase(Locale.ROOT);
             String names = e.players().isEmpty() ? "" : "  (" + String.join(", ", e.players()) + ")";
-            graphics.drawString(font, "[" + time + "] " + who + names, left + 6, y, PickerLayout.HINT_COLOR);
+            graphics.drawString(font, font.plainSubstrByWidth("[" + time + "] " + point + who + names,
+                    right - left - 12), left + 6, y, PickerLayout.HINT_COLOR);
             y += LINE_HEIGHT;
         }
         graphics.disableScissor();

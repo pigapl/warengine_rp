@@ -2,11 +2,6 @@ package com.pigapl.warengine;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-/**
- * Server config. Lives at {@code <server>/config/warengine_pigapl-server.toml}.
- * Only knobs that admins might reasonably tune during an event season belong here;
- * kit contents live as JSON files under {@code config/warengine_pigapl/kits/}.
- */
 public final class WarConfig {
     private static final ModConfigSpec.Builder B = new ModConfigSpec.Builder();
 
@@ -47,20 +42,41 @@ public final class WarConfig {
 
     public static final ModConfigSpec.IntValue ROUND_TICKET_CAP = B
             .comment("Every team starts a war at 0 tickets. The first team to reach this many wins",
-                     "immediately. Tickets come only from holding the capture zone (see",
-                     "round.zoneTicketsPerSecond) - kills no longer cost or grant tickets.")
-            .defineInRange("round.ticketCap", 60, 1, 1000000);
+                     "immediately. Tickets come only from OWNING capture points (see",
+                     "round.zoneTicketsPerSecond) - kills no longer cost or grant tickets.",
+                     "This is point-seconds, not seconds: with 3 points at 1/s, owning all three",
+                     "earns 3/s, so 500 = about 2:47 of total dominance, 4:10 on two points.",
+                     "Retune it live from the admin panel once you see real round lengths.")
+            .defineInRange("round.ticketCap", 500, 1, 1000000);
 
     public static final ModConfigSpec.IntValue ZONE_TICKETS_PER_SECOND = B
-            .comment("Tickets gained per second by whichever team holds the capture zone",
-                     "UNCONTESTED - i.e. it has at least one player inside and the enemy has none.",
-                     "An empty or contested zone (both teams present) awards nothing that second.")
+            .comment("Tickets gained per second, PER CAPTURE POINT a team owns. Ownership is sticky -",
+                     "an owned point keeps paying with nobody standing on it. A point pays nothing",
+                     "while contested (two or more teams inside) or while neutral.")
             .defineInRange("round.zoneTicketsPerSecond", 1, 1, 1000);
 
     public static final ModConfigSpec.DoubleValue ZONE_RADIUS = B
-            .comment("Default radius, in blocks, of the marker circle drawn by /war setzone.",
-                     "Also the capture radius used for round.zoneTicketsPerSecond scoring.")
+            .comment("Default radius, in blocks, for /war point add with no radius given.",
+                     "Also the capture radius: who counts as being on the point.")
             .defineInRange("round.zoneRadius", 5.0, 1.0, 128.0);
+
+    public static final ModConfigSpec.IntValue CAPTURE_SECONDS = B
+            .comment("How much capture progress is needed to flip a point to a new owner.",
+                     "One attacker adds 1 per second, so 30 = a 30-second solo capture.",
+                     "See round.captureMaxPlayers for how a group speeds that up.")
+            .defineInRange("round.captureSeconds", 30, 1, 3600);
+
+    public static final ModConfigSpec.IntValue CAPTURE_MAX_PLAYERS = B
+            .comment("Capture progress per second equals the number of attackers on the point,",
+                     "capped at this. At the defaults: 1 player 30s, 2 -> 15s, 3 -> 10s, 6+ -> 5s.",
+                     "Stops a 20-man blob from flipping a point instantly.")
+            .defineInRange("round.captureMaxPlayers", 6, 1, 100);
+
+    public static final ModConfigSpec.IntValue CAPTURE_DECAY_PER_SECOND = B
+            .comment("Capture progress lost per second when nobody is pushing the bar - the attackers",
+                     "died, left, or the owner retook the ground. Higher than the gain rate on purpose,",
+                     "so an abandoned capture drains faster than it filled. 0 = progress never decays.")
+            .defineInRange("round.captureDecayPerSecond", 2, 0, 1000);
 
     public static final ModConfigSpec.DoubleValue BASE_KIT_RADIUS = B
             .comment("How close to their own team's base a player must be to pick or change a kit.",

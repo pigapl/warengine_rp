@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.List;
 
-/** One squad's full detail row for the admin Teams &amp; Squads screen - roster, kits, and limit. */
 public record AdminSquadDetail(String id, String team, String name, int limit, List<AdminPlayerInfo> members) {
 
     public static final StreamCodec<ByteBuf, AdminSquadDetail> STREAM_CODEC = StreamCodec.composite(

@@ -1,6 +1,7 @@
 package com.pigapl.warengine.client;
 
 import com.pigapl.warengine.client.gui.AdminScreen;
+import com.pigapl.warengine.client.gui.HudOptionsScreen;
 import com.pigapl.warengine.client.gui.KitPickerScreen;
 import com.pigapl.warengine.client.gui.SquadPickerScreen;
 import com.pigapl.warengine.client.gui.TeamPickerScreen;
@@ -16,11 +17,8 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 
 /**
  * Drives all three pickers. The server never tells the client to open one - which screen is owed is
- * derived from state the client already has (scoreboard team, pushed squad id, pushed kit id):
- * "UI is a pure function of state", as a {@code Team -> Squad -> Kit} chain.
- *
- * <p>Each screen auto-opens at most once per state, so closing one does not fight the player. The
- * flag clears when its state changes, which is also what makes each hand-off work.</p>
+ * derived from state the client already has, as a {@code Team -> Squad -> Kit} chain. Each auto-opens
+ * at most once per state, so closing one does not fight the player.
  */
 @EventBusSubscriber(modid = WarEngineClient.MODID, value = Dist.CLIENT)
 public final class ClientEvents {
@@ -41,8 +39,14 @@ public final class ClientEvents {
             }
         }
 
-        // Server-triggered (/warstate admin), not derived from state like the pickers, so it
-        // overrides whatever is open. One-shot: the flag clears on read.
+        // The HUD keeps drawing behind it - that is the point, you size it while looking at it.
+        while (KeyBindings.HUD_OPTIONS.consumeClick()) {
+            if (mc.screen == null) {
+                mc.setScreen(new HudOptionsScreen(null));
+            }
+        }
+
+        // Server-triggered, not derived from state, so it overrides whatever is open.
         if (ClientAdminCache.consumeOpenRequest()) {
             mc.setScreen(new AdminScreen());
         }
@@ -56,7 +60,7 @@ public final class ClientEvents {
 
         boolean hasTeam = mc.player.getTeam() != null;
         if (!hasTeam) {
-            autoOpenedSquadPicker = false; // so the squad picker can open once they do pick a team
+            autoOpenedSquadPicker = false;
             autoOpenedKitPicker = false;
             if (!autoOpenedTeamPicker && mc.screen == null) {
                 autoOpenedTeamPicker = true;
@@ -68,9 +72,8 @@ public final class ClientEvents {
 
         boolean hasSquad = !ClientSquadCache.squadId().isEmpty();
         if (!hasSquad) {
-            autoOpenedKitPicker = false; // so the kit picker can open once they do pick a squad
-            // Wait for the list rather than flashing an empty screen; the server sends it right after
-            // the team assignment lands. An empty list is valid - the screen offers "Create Squad".
+            autoOpenedKitPicker = false;
+            // Wait for the list rather than flashing an empty screen. An empty list is still valid.
             if (!autoOpenedSquadPicker && mc.screen == null) {
                 autoOpenedSquadPicker = true;
                 mc.setScreen(new SquadPickerScreen());
@@ -90,7 +93,6 @@ public final class ClientEvents {
         }
     }
 
-    /** Whichever picker the player currently needs, following the Team -&gt; Squad -&gt; Kit chain. */
     private static Screen owedScreen(Minecraft mc) {
         if (mc.player == null || mc.player.getTeam() == null) {
             return new TeamPickerScreen();

@@ -23,14 +23,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Registers every custom payload and handles the two inbound ones. Outbound sends are called from
- * wherever kit/team state changes - {@code KitCommand} and the handlers here - so the UI path and the
- * command path can never disagree about what the client was told.
+ * Registers every custom payload and handles the inbound ones.
  *
- * <p>All four payloads are registered on BOTH dists: the handshake requires both sides to agree on
- * which channels exist, so a dedicated server must register the S2C types too even though it only
- * ever sends them. The {@code Dist.CLIENT} check goes inside the S2C handler bodies, never around
- * the registration, so a dedicated server never resolves {@link ClientPayloadHandlers}.</p>
+ * <p>All payloads are registered on BOTH dists - the handshake requires both sides to agree on which
+ * channels exist. The {@code Dist.CLIENT} check goes inside the S2C handler bodies, never around the
+ * registration, so a dedicated server never resolves {@link ClientPayloadHandlers}.</p>
  */
 public final class KitNetworking {
     private KitNetworking() {}
@@ -66,7 +63,6 @@ public final class KitNetworking {
                 });
     }
 
-    // ------------------------------------------------------------------ inbound (client -> server)
 
     private static void handleSelectTeam(ServerboundSelectTeamPayload payload, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) {
@@ -118,11 +114,7 @@ public final class KitNetworking {
         }
     }
 
-    /**
-     * Refreshes the catalog for a whole team - for changes the whole team sees regardless of squad
-     * (a kit's access, name, limit or existence). For "someone took/dropped a limited kit" use
-     * {@link #sendCatalogToSquad}: that count is squad-scoped, so a team-wide send is wasted.
-     */
+    /** For team-wide changes only. A taken/dropped limited kit is squad-scoped - use {@link #sendCatalogToSquad}. */
     public static void sendCatalogToTeam(MinecraftServer server, String team) {
         if (team == null) {
             return;
@@ -134,7 +126,6 @@ public final class KitNetworking {
         }
     }
 
-    /** Refreshes the catalog (and so the slot counts) for every online player in one squad. */
     public static void sendCatalogToSquad(MinecraftServer server, String squadId) {
         if (squadId == null) {
             return;
@@ -147,19 +138,12 @@ public final class KitNetworking {
         }
     }
 
-    // ------------------------------------------------------------------ outbound (server -> client)
 
     public static void sendCatalogFor(ServerPlayer player) {
         sendCatalogFor(player, null);
     }
 
-    /**
-     * Sends the player their team's kit catalog - empty if they have no team OR no squad, since squad
-     * gates the kit step, so a player between steps never shows a stale picker.
-     *
-     * @param excludeFromCounts a player to leave out of the slot counts, for the logout case where the
-     *                          leaving player may still be in the player list
-     */
+    /** Empty with no team OR no squad - squad gates the kit step, so a stale picker never shows. */
     public static void sendCatalogFor(ServerPlayer player, UUID excludeFromCounts) {
         String team = TeamService.getTeam(player.server, player);
         String squad = team == null ? null
@@ -168,14 +152,14 @@ public final class KitNetworking {
         if (team != null && squad != null) {
             for (String id : TeamKits.kitsFor(team)) {
                 if (!KitService.kitOfferedToSquad(player.server, squad, id)) {
-                    continue; // budgeted kit this squad reserved none of - not shown in its picker
+                    continue;
                 }
                 KitStorage.get(id).ifPresent(kit -> {
                     int cap = KitService.squadKitLimit(player.server, squad, id, kit);
                     entries.add(new KitCatalogEntry(
                             id, kit.displayNameOr(id), kit.iconOrGuess(), kit.description().orElse(""),
                             new KitLoadout(kit.armor(), kit.offhand(), kit.inventory()),
-                            new KitAvailability(cap < 0 ? 0 : cap, // client treats 0 as unlimited
+                            new KitAvailability(cap < 0 ? 0 : cap,
                                     KitService.countUsing(player.server, squad, id, excludeFromCounts))));
                 });
             }
@@ -188,10 +172,6 @@ public final class KitNetworking {
         PacketDistributor.sendToPlayer(player, new ClientboundKitStatePayload(kitId == null ? "" : kitId));
     }
 
-    /**
-     * Sends the player their team's budgeted kits (total + how much is still unclaimed) for the
-     * Create-squad screen's reservation steppers. Empty with no team or no budgets.
-     */
     public static void sendKitBudgetFor(ServerPlayer player) {
         String team = TeamService.getTeam(player.server, player);
         List<KitBudgetEntry> entries = new ArrayList<>();

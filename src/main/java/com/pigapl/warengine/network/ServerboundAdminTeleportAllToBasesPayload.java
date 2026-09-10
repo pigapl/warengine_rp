@@ -6,10 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/**
- * Admin panel's "TP All to Bases" - every online player goes to their own team's base. Players with
- * no team, or on a team with no base set, are left where they are.
- */
 public record ServerboundAdminTeleportAllToBasesPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminTeleportAllToBasesPayload> TYPE =

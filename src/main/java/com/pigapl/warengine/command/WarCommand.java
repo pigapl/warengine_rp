@@ -3,35 +3,42 @@ package com.pigapl.warengine.command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.pigapl.warengine.WarConfig;
 import com.pigapl.warengine.round.RoundService;
 import com.pigapl.warengine.state.WarState;
+import com.pigapl.warengine.state.WarState.CapturePoint;
 import com.pigapl.warengine.team.TeamService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.List;
+import java.util.Set;
+
 /**
- * {@code /war} command tree - the round module's control surface.
+ * {@code /war} command tree - see {@code docs/war-rounds.md} for the listing. State is in
+ * {@link WarState}, behaviour in {@link RoundService}.
  *
- * <pre>
- *   /war start [minutes]      (op)  start a war (default {@code round.defaultDurationMinutes})
- *   /war end                 (op)  end it now and announce the result
- *   /war status                    time left + each team's tickets + zone
- *   /war setzone [radius]     (op)  put the marker circle at your feet (default {@code round.zoneRadius})
- *   /war clearzone           (op)  remove the marker circle
- * </pre>
- *
- * <p>State is held in {@link WarState}; behaviour is in {@link RoundService}.</p>
+ * <p>Everything lives under the one {@code war} root on purpose: Brigadier MERGES a duplicate root
+ * literal rather than rejecting it, silently overwriting same-named children.</p>
  */
 public final class WarCommand {
 
     private WarCommand() {}
+
+    private static final SuggestionProvider<CommandSourceStack> POINT_IDS = (ctx, builder) ->
+            SharedSuggestionProvider.suggest(
+                    WarState.get(ctx.getSource().getServer()).points().stream().map(p -> p.id).toList(),
+                    builder);
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("war")
@@ -45,14 +52,29 @@ public final class WarCommand {
                         .executes(WarCommand::end))
                 .then(Commands.literal("status")
                         .executes(WarCommand::status))
-                .then(Commands.literal("setzone")
-                        .requires(src -> src.hasPermission(2))
-                        .executes(ctx -> setzone(ctx, WarConfig.ZONE_RADIUS.get()))
-                        .then(Commands.argument("radius", DoubleArgumentType.doubleArg(1.0, 128.0))
-                                .executes(ctx -> setzone(ctx, DoubleArgumentType.getDouble(ctx, "radius")))))
-                .then(Commands.literal("clearzone")
-                        .requires(src -> src.hasPermission(2))
-                        .executes(WarCommand::clearzone)));
+                .then(Commands.literal("point")
+                        .then(Commands.literal("list")
+                                .executes(WarCommand::listPoints))
+                        .then(Commands.literal("add")
+                                .requires(src -> src.hasPermission(2))
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .executes(ctx -> addPoint(ctx, WarConfig.ZONE_RADIUS.get()))
+                                        .then(Commands.argument("radius", DoubleArgumentType.doubleArg(1.0, 128.0))
+                                                .executes(ctx -> addPoint(ctx,
+                                                        DoubleArgumentType.getDouble(ctx, "radius"))))))
+                        .then(Commands.literal("remove")
+                                .requires(src -> src.hasPermission(2))
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .suggests(POINT_IDS)
+                                        .executes(WarCommand::removePoint)))
+                        .then(Commands.literal("clear")
+                                .requires(src -> src.hasPermission(2))
+                                .executes(WarCommand::clearPoints))
+                        .then(Commands.literal("tp")
+                                .requires(src -> src.hasPermission(2))
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .suggests(POINT_IDS)
+                                        .executes(WarCommand::tpToPoint)))));
     }
 
     private static int start(CommandContext<CommandSourceStack> ctx, int minutes) {
@@ -66,6 +88,11 @@ public final class WarCommand {
         if (TeamService.ids(server).isEmpty()) {
             src.sendSuccess(() -> Component.literal(
                     "No teams exist - the war will run with no tickets. Create teams with /team add.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+        }
+        if (!st.hasPoints()) {
+            src.sendSuccess(() -> Component.literal(
+                    "No capture points exist - nobody can score. Add some with /war point add <id>.")
                     .withStyle(ChatFormatting.YELLOW), false);
         }
         RoundService.start(server, minutes);
@@ -96,19 +123,29 @@ public final class WarCommand {
         } else {
             src.sendSuccess(() -> Component.literal("No war running.").withStyle(ChatFormatting.GRAY), false);
         }
-        if (st.hasZone()) {
-            src.sendSuccess(() -> Component.literal(
-                    "Zone: " + st.zoneX() + " " + st.zoneY() + " " + st.zoneZ()
-                            + " r=" + st.zoneRadius() + " (" + st.zoneDim() + ")")
-                    .withStyle(ChatFormatting.AQUA), false);
-        } else {
-            src.sendSuccess(() -> Component.literal("Zone: unset - /war setzone")
-                    .withStyle(ChatFormatting.GRAY), false);
-        }
-        return 1;
+        return listPoints(ctx);
     }
 
-    private static int setzone(CommandContext<CommandSourceStack> ctx, double radius) {
+    private static int listPoints(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        List<CapturePoint> points = WarState.get(src.getServer()).points();
+        if (points.isEmpty()) {
+            src.sendSuccess(() -> Component.literal("No capture points - /war point add <id>")
+                    .withStyle(ChatFormatting.GRAY), false);
+            return 0;
+        }
+        for (CapturePoint p : points) {
+            String owner = p.owner == null ? "neutral" : p.owner;
+            String capturing = p.capturingTeam == null ? ""
+                    : "  <- " + p.capturingTeam + " " + p.progress + "/" + WarConfig.CAPTURE_SECONDS.get();
+            src.sendSuccess(() -> Component.literal(
+                    p.id + ": " + p.x + " " + p.y + " " + p.z + " r=" + p.radius
+                            + "  [" + owner + "]" + capturing).withStyle(ChatFormatting.AQUA), false);
+        }
+        return points.size();
+    }
+
+    private static int addPoint(CommandContext<CommandSourceStack> ctx, double radius) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
         try {
@@ -117,24 +154,77 @@ public final class WarCommand {
             src.sendFailure(Component.literal("Run this as a player - it uses your position."));
             return 0;
         }
+        String id = StringArgumentType.getString(ctx, "id");
+        if (id.length() > 8) {
+            src.sendFailure(Component.literal("Point ids are 8 characters or fewer - they go on the HUD."));
+            return 0;
+        }
+        WarState st = WarState.get(src.getServer());
+        boolean replaced = st.getPoint(id) != null;
         BlockPos pos = player.blockPosition();
         String dim = player.level().dimension().location().toString();
-        WarState.get(src.getServer()).setZone(dim, pos.getX(), pos.getY(), pos.getZ(), radius);
+        CapturePoint point = st.addPoint(id, dim, pos.getX(), pos.getY(), pos.getZ(), radius);
+        RoundService.broadcastPoints(src.getServer(), st, true);
         src.sendSuccess(() -> Component.literal(
-                "Zone set at " + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+                (replaced ? "Point " + point.id + " moved to " : "Point " + point.id + " created at ")
+                        + pos.getX() + " " + pos.getY() + " " + pos.getZ()
                         + " with a " + radius + "-block radius.").withStyle(ChatFormatting.GREEN), true);
         return 1;
     }
 
-    private static int clearzone(CommandContext<CommandSourceStack> ctx) {
+    private static int removePoint(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
+        String id = StringArgumentType.getString(ctx, "id");
         WarState st = WarState.get(src.getServer());
-        if (!st.hasZone()) {
-            src.sendFailure(Component.literal("No zone is set."));
+        if (!st.removePoint(id)) {
+            src.sendFailure(Component.literal("No capture point called " + id + "."));
             return 0;
         }
-        st.clearZone();
-        src.sendSuccess(() -> Component.literal("Zone cleared.").withStyle(ChatFormatting.GREEN), true);
+        RoundService.broadcastPoints(src.getServer(), st, true);
+        src.sendSuccess(() -> Component.literal("Point " + id + " removed.")
+                .withStyle(ChatFormatting.GREEN), true);
+        return 1;
+    }
+
+    private static int clearPoints(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        WarState st = WarState.get(src.getServer());
+        if (!st.hasPoints()) {
+            src.sendFailure(Component.literal("No capture points are set."));
+            return 0;
+        }
+        int n = st.clearPoints();
+        RoundService.broadcastPoints(src.getServer(), st, true);
+        src.sendSuccess(() -> Component.literal(n + " capture point(s) removed.")
+                .withStyle(ChatFormatting.GREEN), true);
+        return n;
+    }
+
+    private static int tpToPoint(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        ServerPlayer player;
+        try {
+            player = src.getPlayerOrException();
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("Run this as a player."));
+            return 0;
+        }
+        String id = StringArgumentType.getString(ctx, "id");
+        CapturePoint point = WarState.get(src.getServer()).getPoint(id);
+        if (point == null) {
+            src.sendFailure(Component.literal("No capture point called " + id + "."));
+            return 0;
+        }
+        ServerLevel level = RoundService.levelOf(src.getServer(), point);
+        if (level == null) {
+            src.sendFailure(Component.literal("Point " + point.id + " is in an unloaded dimension ("
+                    + point.dim + ")."));
+            return 0;
+        }
+        player.teleportTo(level, point.x + 0.5, point.y + 1.0, point.z + 0.5, Set.of(),
+                player.getYRot(), player.getXRot());
+        src.sendSuccess(() -> Component.literal("Teleported to point " + point.id + ".")
+                .withStyle(ChatFormatting.GREEN), false);
         return 1;
     }
 }

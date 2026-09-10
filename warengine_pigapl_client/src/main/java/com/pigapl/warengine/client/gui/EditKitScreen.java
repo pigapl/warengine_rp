@@ -17,12 +17,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/**
- * Edits one kit's display name, limit, and per-team access. Team toggles apply immediately (one
- * click, one {@link ServerboundAdminToggleKitTeamPayload}) since there's no batching benefit; name
- * and limit are saved together via "Save" ({@link ServerboundAdminUpdateKitPayload}) since they sit
- * in one text-entry step.
- */
 public final class EditKitScreen extends Screen {
 
     private static final int FIELD_WIDTH = 180;
@@ -120,8 +114,7 @@ public final class EditKitScreen extends Screen {
             requestSnapshot();
         }
         if (lastSeenRevision != ClientAdminCache.revision()) {
-            // rebuildWidgets() fires on every polled reply (~1/s) and recreates every widget, which
-            // would wipe mid-typed text. Preserve both fields and which one had focus.
+            // The ~1/s poll rebuild recreates every widget and would wipe mid-typed text.
             String typedName = nameBox == null ? "" : nameBox.getValue();
             String typedLimit = limitBox == null ? "" : limitBox.getValue();
             boolean nameFocused = nameBox != null && nameBox.isFocused();

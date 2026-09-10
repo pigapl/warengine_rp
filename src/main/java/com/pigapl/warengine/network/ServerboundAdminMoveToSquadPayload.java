@@ -10,7 +10,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
-/** Admin panel's per-member "Move to squad" action. Online players only - see {@code AdminNetworking}. */
 public record ServerboundAdminMoveToSquadPayload(UUID target, String squadId) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminMoveToSquadPayload> TYPE =

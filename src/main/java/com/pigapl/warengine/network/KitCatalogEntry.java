@@ -5,12 +5,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
 
-/**
- * One kit as sent to a client for the kit-picker screen. {@code description} is {@code ""} when
- * unset. Full contents ({@link #loadout}) are included so the screen can preview the loadout
- * without a separate round-trip - see the client-UI protocol notes for why that trade is fine at
- * this kit count/size.
- */
+/** Full contents are included so the picker can preview a loadout without a second round-trip. */
 public record KitCatalogEntry(String id, String displayName, ItemStack icon, String description,
                                KitLoadout loadout, KitAvailability availability) {
 

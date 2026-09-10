@@ -10,7 +10,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
-/** Admin panel's "Set Kit" action - force-equips a kit on a player, bypassing team/squad/limit checks. */
 public record ServerboundAdminForceKitPayload(UUID target, String kitId) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminForceKitPayload> TYPE =

@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
-/** Admin panel's "TP" button - teleports the ADMIN to the target player. Target must be online. */
 public record ServerboundAdminTeleportToPlayerPayload(UUID target) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminTeleportToPlayerPayload> TYPE =

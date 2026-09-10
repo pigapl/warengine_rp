@@ -8,9 +8,8 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * The Scarce Weapons screen's per-row "Remove". Targets by index into the LAST snapshot the client
- * received, not by identity - fine for a short list re-polled every second, and a stale index on a
- * race just removes nothing or the wrong-but-still-scarce item, never crashes.
+ * Targets by index into the client's LAST snapshot, not by identity - a stale index on a race
+ * removes nothing or the wrong-but-still-scarce item, never crashes.
  */
 public record ServerboundAdminUnmarkScarceAtPayload(int index) implements CustomPacketPayload {
 

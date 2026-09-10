@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's "Restore Teams" button - calls {@code TeamKits#restore} (fresh-world setup). */
 public record ServerboundAdminRestoreTeamsPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminRestoreTeamsPayload> TYPE =

@@ -1,5 +1,6 @@
 package com.pigapl.warengine.team;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.scores.PlayerTeam;
@@ -8,21 +9,17 @@ import net.minecraft.world.scores.Scoreboard;
 import java.util.List;
 
 /**
- * Team lookup/assignment on top of vanilla scoreboard teams - not a custom store.
+ * Team lookup/assignment on top of vanilla scoreboard teams - not a custom store. Membership
+ * deliberately does NOT live in {@code WarState}: vanilla teams already give colour, friendly-fire
+ * and nametags, and already persist. No teams exist until an admin creates one - no default red/blue.
  *
- * <p>Membership deliberately does NOT live in {@code WarState}: vanilla {@link PlayerTeam}s already
- * give color, friendly-fire, nametag visibility and prefix/suffix through {@code /team}, and already
- * persist across rejoin. No teams exist until an admin creates one - there is no default red/blue.</p>
- *
- * <p>This class is just the one place to ask "what team is this player on" / "put them on team X",
- * so callers never reach into {@link Scoreboard}/{@link PlayerTeam} directly. {@link #assign} backs
- * the SelectTeam payload; a player joining themselves can use {@code /team join <id>}.</p>
+ * <p>The one place to ask "what team is this player on", so callers never touch {@link Scoreboard}
+ * directly.</p>
  */
 public final class TeamService {
 
     private TeamService() {}
 
-    /** Currently existing team ids (empty until an admin runs /team add). */
     public static List<String> ids(MinecraftServer server) {
         return server.getScoreboard().getPlayerTeams().stream()
                 .map(PlayerTeam::getName)
@@ -30,15 +27,24 @@ public final class TeamService {
                 .toList();
     }
 
-    /** The team a player is currently on, or {@code null}. */
     public static String getTeam(MinecraftServer server, ServerPlayer player) {
         PlayerTeam team = server.getScoreboard().getPlayersTeam(player.getScoreboardName());
         return team == null ? null : team.getName();
     }
 
+    /** One colour table: particle rings tint the same way nametags and team cards already do. */
+    public static int colorOf(MinecraftServer server, String teamId, int fallback) {
+        if (teamId == null) {
+            return fallback;
+        }
+        PlayerTeam team = server.getScoreboard().getPlayerTeam(teamId);
+        ChatFormatting color = team == null ? null : team.getColor();
+        Integer rgb = color == null ? null : color.getColor();
+        return rgb == null ? fallback : rgb;
+    }
+
     public enum AssignResult { OK, UNKNOWN_TEAM }
 
-    /** Joins {@code player} to an already-existing team (create it first with /team add). */
     public static AssignResult assign(MinecraftServer server, ServerPlayer player, String teamId) {
         Scoreboard scoreboard = server.getScoreboard();
         PlayerTeam team = scoreboard.getPlayerTeam(teamId);

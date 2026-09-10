@@ -8,11 +8,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * One card in a picker grid: optional item icon, a title, and a subtitle line (slot count, member
- * count, ...). Shared by both pickers so the team and kit screens look like one thing.
- *
- * <p>Drawn entirely from fills and text - no texture assets - so the palette lives here rather than
- * in a resource pack.</p>
+ * One card in a picker grid, shared by both pickers. Drawn entirely from fills and text - no texture
+ * assets - so the palette lives here rather than in a resource pack.
  */
 public final class SelectionCardWidget extends AbstractButton {
 
@@ -31,11 +28,6 @@ public final class SelectionCardWidget extends AbstractButton {
     private final boolean selected;
     private final Runnable onSelect;
 
-    /**
-     * @param icon     rendered at 2x in the card's upper area; pass {@link ItemStack#EMPTY} for none
-     * @param accent   border/subtitle colour when selected (e.g. a team's own colour)
-     * @param selected draws the accent border - the player's current team/kit
-     */
     public SelectionCardWidget(int x, int y, int width, int height, Component title, Component subtitle,
                                ItemStack icon, int accent, boolean selected, Runnable onSelect) {
         super(x, y, width, height, title);
@@ -62,7 +54,6 @@ public final class SelectionCardWidget extends AbstractButton {
         graphics.fill(getX(), getY(), getX() + width, getY() + height, background);
         graphics.renderOutline(getX(), getY(), width, height, border);
         if (selected) {
-            // Second inset outline so the current pick reads clearly even at a glance.
             graphics.renderOutline(getX() + 1, getY() + 1, width - 2, height - 2, accent);
         }
 

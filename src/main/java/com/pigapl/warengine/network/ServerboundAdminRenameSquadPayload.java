@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's rename-squad action - calls {@code SquadService#rename}. */
 public record ServerboundAdminRenameSquadPayload(String squadId, String name) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminRenameSquadPayload> TYPE =

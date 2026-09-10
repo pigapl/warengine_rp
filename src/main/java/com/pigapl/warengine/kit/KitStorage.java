@@ -21,10 +21,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
-/**
- * Loads and saves kit JSON files under {@code config/warengine_pigapl/kits/<id>.json}
- * and keeps them in memory for the running server. Reloadable at runtime via {@code /kit reload}.
- */
 public final class KitStorage {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Map<String, KitDefinition> KITS = new HashMap<>();
@@ -47,7 +43,6 @@ public final class KitStorage {
         return Optional.ofNullable(KITS.get(normalizeId(id)));
     }
 
-    /** Wipes the in-memory cache and reloads every {@code *.json} in the kit directory. */
     public static int loadAll(MinecraftServer server) {
         KITS.clear();
         Path dir = dir();
@@ -78,7 +73,6 @@ public final class KitStorage {
         return KITS.size();
     }
 
-    /** Serializes a kit to disk and updates the in-memory cache. */
     public static void save(String id, KitDefinition def, MinecraftServer server) throws IOException {
         String norm = normalizeId(id);
         RegistryOps<JsonElement> ops = server.registryAccess().createSerializationContext(JsonOps.INSTANCE);
@@ -89,7 +83,6 @@ public final class KitStorage {
         KITS.put(norm, def);
     }
 
-    /** @return true if a file was actually removed. */
     public static boolean delete(String id) throws IOException {
         String norm = normalizeId(id);
         KITS.remove(norm);

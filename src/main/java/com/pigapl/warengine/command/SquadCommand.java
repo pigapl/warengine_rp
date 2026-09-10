@@ -21,20 +21,8 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.Map;
 
 /**
- * {@code /squad} command tree - the console-command equivalent of the squad-picker UI, for testing
- * without it and as a fallback. Squads sit between team and kit: {@code /team join} -&gt;
- * {@code /squad create|join} -&gt; {@code /kit <class>}.
- *
- * <pre>
- *   /squad list                        squads on your own team, with roster counts
- *   /squad create &lt;name&gt; &lt;limit&gt;       found a squad on your team and join it
- *   /squad join &lt;id&gt;                   join an existing squad on your team
- *   /squad leave                       vacate your current squad
- *   /squad reserve &lt;id&gt; &lt;kit&gt; &lt;n&gt; (op) set a squad's reservation of a budgeted kit (0 clears it)
- * </pre>
- *
- * <p>{@code /squad reserve} is the console equivalent of editing reservations in the admin panel.
- * The create-time reservation flow is UI-only; this command creates squads with none.</p>
+ * {@code /squad} command tree - the console equivalent of the squad picker, for testing without it.
+ * Squads sit between team and kit. See {@code docs/squads.md} for the listing.
  *
  * <p>Validation lives in {@link SquadService} and the refresh in
  * {@link SquadNetworking#refreshAfterSquadChange}, both shared with the payload handlers so the two
@@ -42,7 +30,6 @@ import java.util.Map;
  */
 public final class SquadCommand {
 
-    /** The caller's own team's squads - the only ones {@code /squad join} can legally target. */
     private static final SuggestionProvider<CommandSourceStack> SQUAD_IDS = (ctx, builder) -> {
         ServerPlayer player;
         try {
@@ -83,7 +70,6 @@ public final class SquadCommand {
                                                         IntegerArgumentType.getInteger(ctx, "count"))))))));
     }
 
-    /** Every squad id in the world - {@code /squad reserve} is admin-facing, not team-scoped. */
     private static final SuggestionProvider<CommandSourceStack> ANY_SQUAD_IDS = (ctx, builder) ->
             SharedSuggestionProvider.suggest(
                     WarState.get(ctx.getSource().getServer()).squads().keySet(), builder);
@@ -114,7 +100,7 @@ public final class SquadCommand {
                 src.sendFailure(Component.literal("Count can't be negative."));
                 return 0;
             }
-            case OK -> { /* fall through */ }
+            case OK -> { }
             default -> {
                 src.sendFailure(Component.literal("Couldn't set that reservation."));
                 return 0;
@@ -197,7 +183,7 @@ public final class SquadCommand {
                 src.sendFailure(Component.literal("A kit reservation exceeds the team budget."));
                 return 0;
             }
-            case OK -> { /* fall through */ }
+            case OK -> { }
         }
         String newSquad = SquadService.getSquadId(src.getServer(), player);
         SquadNetworking.refreshAfterSquadChange(player, oldSquad, newSquad);
@@ -231,7 +217,7 @@ public final class SquadCommand {
                 src.sendFailure(Component.literal("Squad '" + id + "' is full."));
                 return 0;
             }
-            case OK -> { /* fall through */ }
+            case OK -> { }
         }
         SquadNetworking.refreshAfterSquadChange(player, oldSquad, id);
         src.sendSuccess(() -> Component.literal("Joined squad '" + id + "'.")

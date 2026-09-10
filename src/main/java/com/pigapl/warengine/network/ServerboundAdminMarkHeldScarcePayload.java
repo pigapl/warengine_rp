@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's "Mark held item as scarce" button - the UI trigger for {@code /kit scarce setscarce}. */
 public record ServerboundAdminMarkHeldScarcePayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminMarkHeldScarcePayload> TYPE =

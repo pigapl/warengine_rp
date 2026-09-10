@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** The player's own assigned kit id. {@code ""} means no kit assigned yet - kit ids are never empty. */
 public record ClientboundKitStatePayload(String kitId) implements CustomPacketPayload {
 
     public static final Type<ClientboundKitStatePayload> TYPE =

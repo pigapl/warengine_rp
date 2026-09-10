@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-/** Every {@code (team, kit)} budget row for the admin Kit Budgets screen - see {@link AdminBudgetRow}. */
 public record ClientboundAdminBudgetSnapshotPayload(List<AdminBudgetRow> rows) implements CustomPacketPayload {
 
     public static final Type<ClientboundAdminBudgetSnapshotPayload> TYPE =

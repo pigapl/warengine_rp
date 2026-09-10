@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
-/** Admin panel's per-member "Kick" button. The handler MUST re-check op status - see {@code AdminNetworking}. */
 public record ServerboundAdminKickSquadMemberPayload(UUID target) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminKickSquadMemberPayload> TYPE =

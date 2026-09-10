@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client asks for a fresh kit-library snapshot - the admin Kit Library screen polls this while open. */
 public record ServerboundRequestAdminKitsSnapshotPayload() implements CustomPacketPayload {
 
     public static final Type<ServerboundRequestAdminKitsSnapshotPayload> TYPE =

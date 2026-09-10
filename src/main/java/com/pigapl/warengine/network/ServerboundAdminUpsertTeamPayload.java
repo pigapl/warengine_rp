@@ -7,13 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/**
- * Admin panel's Create Team AND Change Color actions - both are one call to
- * {@code TeamKits#addTeam}, which already creates-or-adopts a team and (re)sets its color in one
- * step, so this payload does double duty rather than needing two.
- *
- * @param color a {@code ChatFormatting} color name, or {@code ""} to leave the color untouched
- */
+/** Create Team AND Change Color - {@code TeamKits#addTeam} does both, so one payload covers both. */
 public record ServerboundAdminUpsertTeamPayload(String id, String color) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminUpsertTeamPayload> TYPE =

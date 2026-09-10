@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
-/** Admin panel's "Resupply" action - runs the same reconcile top-up {@code /kit resupply} does. */
 public record ServerboundAdminForceResupplyPayload(UUID target) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminForceResupplyPayload> TYPE =

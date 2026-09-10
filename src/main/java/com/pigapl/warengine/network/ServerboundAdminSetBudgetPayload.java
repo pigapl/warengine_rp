@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin Kit Budgets screen sets a team's total for one kit ({@code count <= 0} clears it) - calls {@code TeamKits#setBudget}. */
 public record ServerboundAdminSetBudgetPayload(String team, String kitId, int count) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminSetBudgetPayload> TYPE =

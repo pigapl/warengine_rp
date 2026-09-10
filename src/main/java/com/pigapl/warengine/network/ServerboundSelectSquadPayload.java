@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client asks to join an existing squad on their own team. */
 public record ServerboundSelectSquadPayload(String squadId) implements CustomPacketPayload {
 
     public static final Type<ServerboundSelectSquadPayload> TYPE =

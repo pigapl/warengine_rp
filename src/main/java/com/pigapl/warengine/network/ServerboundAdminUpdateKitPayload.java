@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin Kit Library screen's Save button - sets a kit's display name and limit in one call. */
 public record ServerboundAdminUpdateKitPayload(String kitId, String displayName, int limit)
         implements CustomPacketPayload {
 

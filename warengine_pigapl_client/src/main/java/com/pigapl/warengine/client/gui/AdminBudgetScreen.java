@@ -16,16 +16,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Kit Budgets - per team, how many of each kit the whole team may field. Squads then reserve from
- * that budget when they are created (the "press 2/5" step). A kit with a budget of 0 has no cap and
- * follows its plain per-squad {@code KitDefinition.limit} instead.
- *
- * <p>Reached from the admin panel's "Kit Budgets" button. Polls
- * {@link ServerboundRequestAdminBudgetSnapshotPayload} while open, same as the other admin screens.
- * The {@code -}/{@code +}/{@code Clear} buttons each send one {@link ServerboundAdminSetBudgetPayload}
- * and the reply refreshes the list.</p>
- */
 public final class AdminBudgetScreen extends Screen {
 
     private static final int POLL_INTERVAL_TICKS = 20;

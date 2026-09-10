@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin screen's Start War button. The handler MUST re-check op status - see {@code AdminNetworking}. */
 public record ServerboundAdminStartWarPayload(int minutes) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminStartWarPayload> TYPE =

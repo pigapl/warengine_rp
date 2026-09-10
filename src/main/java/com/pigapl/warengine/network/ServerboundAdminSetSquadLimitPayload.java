@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Admin panel's set-squad-limit action - calls {@code SquadService#setLimit}. */
 public record ServerboundAdminSetSquadLimitPayload(String squadId, int limit) implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminSetSquadLimitPayload> TYPE =

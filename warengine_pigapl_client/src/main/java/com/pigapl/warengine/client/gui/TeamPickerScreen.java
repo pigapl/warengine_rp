@@ -12,15 +12,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/**
- * Team picker, a card grid matching {@link KitPickerScreen}. Reads the team list straight off the
- * client's own scoreboard - vanilla already syncs every {@link PlayerTeam} to every client, so this
- * needs no request of its own and member counts are live for free.
- *
- * <p>Picking only sends {@link ServerboundSelectTeamPayload}; the server's reply and vanilla's team
- * sync are what actually update state. Escape still closes it - the unassigned-player nag is the
- * real enforcement, this screen is convenience.</p>
- */
 public final class TeamPickerScreen extends Screen {
 
     private static final int DEFAULT_ACCENT = 0xFF8A8A96;
@@ -32,10 +23,7 @@ public final class TeamPickerScreen extends Screen {
         super(Component.literal("Pick your Team"));
     }
 
-    /**
-     * The scoreboard has no change event, so poll a cheap signature - keeps member counts live and
-     * catches an admin creating or deleting a team while someone sits on this screen.
-     */
+    /** The scoreboard has no change event, so poll a cheap signature. */
     @Override
     public void tick() {
         if (!signature().equals(lastSeenSignature)) {
@@ -90,7 +78,6 @@ public final class TeamPickerScreen extends Screen {
         return mc.level == null ? List.of() : List.copyOf(mc.level.getScoreboard().getPlayerTeams());
     }
 
-    /** A team's own scoreboard colour, so the card matches the nametags players already see. */
     private static int accentFor(PlayerTeam team) {
         ChatFormatting color = team.getColor();
         Integer rgb = color == null ? null : color.getColor();
@@ -102,7 +89,6 @@ public final class TeamPickerScreen extends Screen {
         onClose();
     }
 
-    /** Panel drawn here, not in render - {@code Screen.render} calls renderBackground itself. */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
