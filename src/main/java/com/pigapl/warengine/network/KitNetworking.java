@@ -33,7 +33,8 @@ public final class KitNetworking {
     private KitNetworking() {}
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        // "2": select_kit gained a field. A stale client is refused at login instead of on its first pick.
+        PayloadRegistrar registrar = event.registrar("2");
 
         registrar.playToServer(ServerboundSelectTeamPayload.TYPE, ServerboundSelectTeamPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSelectTeam(payload, context)));
@@ -50,6 +51,12 @@ public final class KitNetworking {
                 (payload, context) -> {
                     if (FMLEnvironment.dist.isClient()) {
                         context.enqueueWork(() -> ClientPayloadHandlers.handleKitState(payload, context));
+                    }
+                });
+        registrar.playToClient(ClientboundKitConfirmPayload.TYPE, ClientboundKitConfirmPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist.isClient()) {
+                        context.enqueueWork(() -> ClientPayloadHandlers.handleKitConfirm(payload, context));
                     }
                 });
 
@@ -88,7 +95,17 @@ public final class KitNetworking {
             return;
         }
         boolean bypass = player.createCommandSourceStack().hasPermission(2);
-        KitService.AssignResult result = KitService.assign(player, payload.kitId(), bypass);
+        KitService.AssignResult result = KitService.check(player, payload.kitId(), bypass);
+        if (result == KitService.AssignResult.OK && !payload.confirmed()) {
+            List<String> warning = KitService.scarceWarning(player, payload.kitId());
+            if (!warning.isEmpty()) {
+                PacketDistributor.sendToPlayer(player, new ClientboundKitConfirmPayload(payload.kitId(), warning));
+                return;
+            }
+        }
+        if (result == KitService.AssignResult.OK) {
+            result = KitService.assign(player, payload.kitId(), bypass);
+        }
         if (result == KitService.AssignResult.OK) {
             sendKitState(player);
             // Taking a limited kit changes the remaining slots for the rest of the SQUAD only -

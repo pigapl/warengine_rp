@@ -108,7 +108,7 @@ public final class KitPickerScreen extends Screen {
     }
 
     private void selectKit(String kitId) {
-        PacketDistributor.sendToServer(new ServerboundSelectKitPayload(kitId));
+        PacketDistributor.sendToServer(new ServerboundSelectKitPayload(kitId, false));
         onClose();
     }
 

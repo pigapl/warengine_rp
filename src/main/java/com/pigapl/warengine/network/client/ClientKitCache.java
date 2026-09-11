@@ -37,4 +37,19 @@ public final class ClientKitCache {
         kitId = value;
         revision++;
     }
+
+    public record PendingConfirm(String kitId, List<String> lines) {}
+
+    private static volatile PendingConfirm pendingConfirm;
+
+    static void setPendingConfirm(PendingConfirm value) {
+        pendingConfirm = value;
+    }
+
+    /** One-shot: the client tick loop opens the confirm screen, then it's gone. */
+    public static PendingConfirm consumePendingConfirm() {
+        PendingConfirm value = pendingConfirm;
+        pendingConfirm = null;
+        return value;
+    }
 }

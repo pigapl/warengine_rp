@@ -5,15 +5,20 @@ import com.pigapl.warengine.client.gui.HudOptionsScreen;
 import com.pigapl.warengine.client.gui.KitPickerScreen;
 import com.pigapl.warengine.client.gui.SquadPickerScreen;
 import com.pigapl.warengine.client.gui.TeamPickerScreen;
+import com.pigapl.warengine.network.ServerboundSelectKitPayload;
 import com.pigapl.warengine.network.client.ClientAdminCache;
 import com.pigapl.warengine.network.client.ClientKitCache;
 import com.pigapl.warengine.network.client.ClientSquadCache;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Drives all three pickers. The server never tells the client to open one - which screen is owed is
@@ -49,6 +54,22 @@ public final class ClientEvents {
         // Server-triggered, not derived from state, so it overrides whatever is open.
         if (ClientAdminCache.consumeOpenRequest()) {
             mc.setScreen(new AdminScreen());
+        }
+
+        ClientKitCache.PendingConfirm confirm = ClientKitCache.consumePendingConfirm();
+        if (confirm != null) {
+            mc.setScreen(new ConfirmScreen(yes -> {
+                        if (yes) {
+                            PacketDistributor.sendToServer(new ServerboundSelectKitPayload(confirm.kitId(), true));
+                            mc.setScreen(null);
+                        } else {
+                            mc.setScreen(new KitPickerScreen());
+                        }
+                    },
+                    Component.literal("Switch kit during the war?").withStyle(ChatFormatting.GOLD),
+                    Component.literal(String.join("\n", confirm.lines())),
+                    Component.literal("Switch anyway"),
+                    Component.literal("Cancel")));
         }
 
         if (mc.player == null || mc.level == null) {

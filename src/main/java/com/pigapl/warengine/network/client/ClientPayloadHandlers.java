@@ -8,6 +8,7 @@ import com.pigapl.warengine.network.ClientboundAdminTeamsSnapshotPayload;
 import com.pigapl.warengine.network.ClientboundCapturePointsPayload;
 import com.pigapl.warengine.network.ClientboundKitBudgetPayload;
 import com.pigapl.warengine.network.ClientboundKitCatalogPayload;
+import com.pigapl.warengine.network.ClientboundKitConfirmPayload;
 import com.pigapl.warengine.network.ClientboundKitStatePayload;
 import com.pigapl.warengine.network.ClientboundOpenAdminScreenPayload;
 import com.pigapl.warengine.network.ClientboundSquadListPayload;
@@ -23,6 +24,10 @@ public final class ClientPayloadHandlers {
 
     public static void handleKitState(ClientboundKitStatePayload payload, IPayloadContext context) {
         ClientKitCache.setKitId(payload.kitId());
+    }
+
+    public static void handleKitConfirm(ClientboundKitConfirmPayload payload, IPayloadContext context) {
+        ClientKitCache.setPendingConfirm(new ClientKitCache.PendingConfirm(payload.kitId(), payload.lines()));
     }
 
     public static void handleSquadList(ClientboundSquadListPayload payload, IPayloadContext context) {

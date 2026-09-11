@@ -7,10 +7,11 @@ import org.lwjgl.glfw.GLFW;
 
 public final class KeyBindings {
 
+    // New id on purpose: options.txt pins every player's old N under the old id, so a changed default never applies.
     public static final KeyMapping OPEN_MENU = new KeyMapping(
-            "key.warengine_pigapl_client.open_menu",
+            "key.warengine_pigapl_client.menu",
             InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_N,
+            GLFW.GLFW_KEY_O,
             "key.categories.warengine_pigapl_client"
     );
 

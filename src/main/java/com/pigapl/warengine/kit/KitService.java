@@ -146,6 +146,22 @@ public final class KitService {
     }
 
     public static AssignResult assign(ServerPlayer player, String kitId, boolean bypassTeamAccess) {
+        AssignResult result = check(player, kitId, bypassTeamAccess);
+        if (result != AssignResult.OK) {
+            return result;
+        }
+        String norm = KitStorage.normalizeId(kitId);
+        WarState state = WarState.get(player.server);
+        String old = state.getKit(player.getUUID());
+        apply(player, KitStorage.get(norm).orElseThrow());
+        state.setKit(player.getUUID(), norm);
+        WarEngine.LOGGER.info("[kit] {} picked '{}' (was '{}'){}", player.getGameProfile().getName(), norm, old,
+                state.roundActive() ? " during a war" : "");
+        return AssignResult.OK;
+    }
+
+    /** Validation only, no side effects - lets callers ask for confirmation before {@link #assign}. */
+    public static AssignResult check(ServerPlayer player, String kitId, boolean bypassTeamAccess) {
         String norm = KitStorage.normalizeId(kitId);
         KitDefinition kit = KitStorage.get(norm).orElse(null);
         if (kit == null) {
@@ -177,9 +193,68 @@ public final class KitService {
                 return AssignResult.LIMIT_REACHED;
             }
         }
-        apply(player, kit);
-        WarState.get(player.server).setKit(player.getUUID(), norm);
         return AssignResult.OK;
+    }
+
+    /**
+     * Empty = no confirmation needed. Only mid-war: a pick wipes the inventory (scarce weapons with it)
+     * and the new kit's scarce items never arrive, since the sweep ran at the whistle.
+     */
+    public static List<String> scarceWarning(ServerPlayer player, String kitId) {
+        List<String> lines = new ArrayList<>();
+        KitDefinition kit = KitStorage.get(KitStorage.normalizeId(kitId)).orElse(null);
+        if (kit == null || ScarceItems.isEmpty() || !WarState.get(player.server).roundActive()) {
+            return lines;
+        }
+        if (WarConfig.CLEAR_ON_KIT_COMMAND.get()) {
+            Inventory inv = player.getInventory();
+            List<ItemStack> held = new ArrayList<>(inv.items);
+            held.addAll(inv.armor);
+            held.addAll(inv.offhand);
+            List<String> lose = scarceLabels(held);
+            if (!lose.isEmpty()) {
+                lines.add("You will LOSE: " + String.join(", ", lose));
+            }
+        }
+        List<ItemStack> wanted = new ArrayList<>(kit.armor());
+        wanted.add(kit.offhand());
+        wanted.addAll(merge(kit.inventory()));
+        List<String> withheld = scarceLabels(wanted);
+        if (!withheld.isEmpty()) {
+            lines.add("You will NOT get: " + String.join(", ", withheld)
+                    + " - scarce weapons are only handed out at round start.");
+        }
+        return lines;
+    }
+
+    private static List<String> scarceLabels(List<ItemStack> stacks) {
+        List<String> out = new ArrayList<>();
+        for (ItemStack s : stacks) {
+            if (!s.isEmpty() && ScarceItems.isScarce(s)) {
+                out.add(label(s));
+            }
+        }
+        return out;
+    }
+
+    /** Server-side TACZ hover names are the generic item key, so name guns/ammo by their id instead. */
+    public static String label(ItemStack s) {
+        String name = s.getHoverName().getString();
+        CustomData data = s.get(DataComponents.CUSTOM_DATA);
+        if (data != null && !s.has(DataComponents.CUSTOM_NAME)) {
+            CompoundTag tag = data.copyTag();
+            if (tag.contains("GunId")) {
+                name = idPath(tag.getString("GunId"));
+            } else if (tag.contains("AmmoId")) {
+                name = idPath(tag.getString("AmmoId")) + " ammo";
+            }
+        }
+        return (s.getCount() > 1 ? s.getCount() + "x " : "") + name;
+    }
+
+    private static String idPath(String id) {
+        int colon = id.indexOf(':');
+        return colon < 0 ? id : id.substring(colon + 1);
     }
 
 
@@ -218,8 +293,8 @@ public final class KitService {
 
     /**
      * The <em>only</em> place a scarce item enters the world - {@link #apply} and {@link #reconcile}
-     * both withhold them. Call once, at the whistle; already-holding and offline players are skipped,
-     * so a dropped scarce weapon is never replaced.
+     * both withhold them. Once per round, at the whistle: tops each online holder up to the kit's
+     * amount, so a weapon dropped mid-round is never replaced until the next round.
      *
      * <p>Also the one place a limited kit's cap is really enforced: {@link #assign} counts online
      * players, so a disconnect frees a slot and a squad can reach the whistle over cap. The earliest
@@ -229,13 +304,17 @@ public final class KitService {
         if (ScarceItems.isEmpty()) {
             return 0;
         }
+        OWED_SCARCE.clear();
         WarState state = WarState.get(server);
         int issued = 0;
+        List<String> noKit = new ArrayList<>();
+        List<String> nothingScarce = new ArrayList<>();
 
         Map<String, List<ServerPlayer>> groups = new LinkedHashMap<>();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             String kitId = state.getKit(player.getUUID());
             if (kitId == null || KitStorage.get(kitId).isEmpty()) {
+                noKit.add(player.getGameProfile().getName());
                 continue;
             }
             String squadId = state.getSquad(player.getUUID());
@@ -264,13 +343,21 @@ public final class KitService {
             }
 
             for (ServerPlayer w : winners) {
-                issued += issueScarceTo(w, kit);
+                int n = issueScarceTo(w, kit, kitId);
+                if (n < 0) {
+                    nothingScarce.add(w.getGameProfile().getName() + " (" + kitId + ")");
+                } else {
+                    issued += n;
+                }
             }
             if (!losers.isEmpty()) {
                 for (ServerPlayer l : losers) {
                     stripKitItems(l, kit);
                     state.clearKit(l.getUUID());
                     KitNetworking.sendKitState(l);
+                    l.displayClientMessage(Component.literal("Your squad had more '" + kit.displayNameOr(kitId)
+                            + "' than it is allowed (" + cap + "). The earliest picks kept it, so you were "
+                            + "taken off it - pick another kit.").withStyle(ChatFormatting.RED), false);
                 }
                 KitNetworking.sendCatalogToSquad(server, squadId);
                 WarEngine.LOGGER.warn(
@@ -279,6 +366,12 @@ public final class KitService {
                         squadId, kitId, holders.size(), cap,
                         nameList(winners), nameList(losers));
             }
+        }
+        if (!noKit.isEmpty()) {
+            WarEngine.LOGGER.info("[kit] scarce sweep: no kit at the whistle: {}", String.join(", ", noKit));
+        }
+        if (!nothingScarce.isEmpty()) {
+            WarEngine.LOGGER.info("[kit] scarce sweep: kit has nothing scarce: {}", String.join(", ", nothingScarce));
         }
         return issued;
     }
@@ -325,44 +418,140 @@ public final class KitService {
         sync(player);
     }
 
-    private static int issueScarceTo(ServerPlayer player, KitDefinition kit) {
+    /** -1 = the kit holds nothing scarce. Otherwise stacks issued, including ones owed for lack of room. */
+    private static int issueScarceTo(ServerPlayer player, KitDefinition kit, String kitId) {
         Inventory inv = player.getInventory();
-        int issued = 0;
+        List<String> given = new ArrayList<>();
+        List<String> had = new ArrayList<>();
+        List<ItemStack> owed = new ArrayList<>();
+        boolean any = false;
 
+        // Top up to the kit's amount, counting EVERY slot - an RPG parked in the offhand is still held.
         for (int slot = 0; slot < 4 && slot < kit.armor().size(); slot++) {
             ItemStack piece = kit.armor().get(slot);
             if (piece.isEmpty() || !ScarceItems.isScarce(piece)) {
                 continue;
             }
-            if (inv.armor.get(slot).isEmpty()) {
+            any = true;
+            if (countEverywhere(inv, piece) >= piece.getCount()) {
+                had.add(label(piece));
+            } else if (inv.armor.get(slot).isEmpty()) {
                 inv.armor.set(slot, piece.copy());
-                issued++;
+                given.add(label(piece));
+            } else {
+                giveOrOwe(inv, piece, given, owed);
             }
         }
         ItemStack offhandWant = kit.offhand();
-        if (!offhandWant.isEmpty() && ScarceItems.isScarce(offhandWant) && inv.offhand.get(0).isEmpty()) {
-            inv.offhand.set(0, offhandWant.copy());
-            issued++;
+        if (!offhandWant.isEmpty() && ScarceItems.isScarce(offhandWant)) {
+            any = true;
+            int deficit = offhandWant.getCount() - countEverywhere(inv, offhandWant);
+            if (deficit <= 0) {
+                had.add(label(offhandWant));
+            } else if (inv.offhand.get(0).isEmpty()) {
+                inv.offhand.set(0, copyWithCount(offhandWant, deficit));
+                given.add(label(copyWithCount(offhandWant, deficit)));
+            } else {
+                giveOrOwe(inv, copyWithCount(offhandWant, deficit), given, owed);
+            }
         }
         for (ItemStack want : merge(kit.inventory())) {
-            if (!ScarceItems.isScarce(want) || countMatching(inv, want) > 0) {
+            if (!ScarceItems.isScarce(want)) {
                 continue;
             }
-            ItemStack give = want.copy();
-            int added = insert(inv, give);
-            if (added > 0) {
-                issued++;
+            any = true;
+            int have = countEverywhere(inv, want);
+            int deficit = want.getCount() - have;
+            if (deficit <= 0) {
+                had.add(label(want));
+                continue;
+            }
+            if (have > 0) {
+                had.add(label(copyWithCount(want, have)));
+            }
+            giveOrOwe(inv, copyWithCount(want, deficit), given, owed);
+        }
+        if (!any) {
+            return -1;
+        }
+        sync(player);
+        String owedText = owed.stream().map(KitService::label).collect(Collectors.joining(", "));
+        WarEngine.LOGGER.info("[kit] scarce sweep: {} ({}) gave [{}] already had [{}] owed, inventory full [{}]",
+                player.getGameProfile().getName(), kitId,
+                String.join(", ", given), String.join(", ", had), owedText);
+        if (!given.isEmpty()) {
+            player.displayClientMessage(Component.literal("Round start - you received: " + String.join(", ", given))
+                    .withStyle(ChatFormatting.GOLD), false);
+        }
+        if (!owed.isEmpty()) {
+            OWED_SCARCE.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).addAll(owed);
+            player.displayClientMessage(Component.literal("Inventory full - make room for: " + owedText
+                    + ". It's held for you until you do.").withStyle(ChatFormatting.RED), false);
+            startResupplyCountdown(player, owedCountdownSeconds(), WarConfig.RESUPPLY_GRACE_SECONDS.get());
+        }
+        return given.size() + owed.size();
+    }
+
+    private static int countEverywhere(Inventory inv, ItemStack want) {
+        int total = countMatching(inv, want);
+        for (ItemStack s : inv.armor) {
+            if (!s.isEmpty() && sameForReconcile(s, want)) {
+                total += s.getCount();
+            }
+        }
+        for (ItemStack s : inv.offhand) {
+            if (!s.isEmpty() && sameForReconcile(s, want)) {
+                total += s.getCount();
+            }
+        }
+        return total;
+    }
+
+    private static void giveOrOwe(Inventory inv, ItemStack want, List<String> given, List<ItemStack> owed) {
+        ItemStack give = want.copy();
+        int placed = insert(inv, give);
+        if (placed > 0) {
+            given.add(label(copyWithCount(want, placed)));
+        }
+        if (!give.isEmpty()) {
+            owed.add(give);
+        }
+    }
+
+    // Floor of 10: a 0 config would restart the countdown every tick while the player is still full.
+    private static int owedCountdownSeconds() {
+        return Math.max(10, WarConfig.DEFERRED_RESUPPLY_SECONDS.get());
+    }
+
+    /** Hands over what fits; the rest stays owed and is returned. */
+    private static List<ItemStack> deliverOwedScarce(ServerPlayer p) {
+        List<ItemStack> owed = OWED_SCARCE.remove(p.getUUID());
+        if (owed == null) {
+            return List.of();
+        }
+        List<ItemStack> left = new ArrayList<>();
+        List<String> given = new ArrayList<>();
+        for (ItemStack s : owed) {
+            ItemStack give = s.copy();
+            int placed = insert(p.getInventory(), give);
+            if (placed > 0) {
+                given.add(label(copyWithCount(s, placed)));
             }
             if (!give.isEmpty()) {
-                player.drop(give, false);
+                left.add(give);
             }
         }
-        if (issued > 0) {
-            sync(player);
-            WarEngine.LOGGER.info("[kit] scarce sweep: gave {} scarce item(s) to {}",
-                    issued, player.getGameProfile().getName());
+        sync(p);
+        if (!given.isEmpty()) {
+            p.sendSystemMessage(Component.literal("[Kit] Received: " + String.join(", ", given))
+                    .withStyle(ChatFormatting.GOLD));
+            WarEngine.LOGGER.info("[kit] {} received owed scarce [{}], still owed {}",
+                    p.getGameProfile().getName(), String.join(", ", given), left.size());
         }
-        return issued;
+        if (!left.isEmpty()) {
+            OWED_SCARCE.put(p.getUUID(), left);
+        }
+        return left;
     }
 
 
@@ -381,6 +570,9 @@ public final class KitService {
     }
 
     private static final Map<UUID, Countdown> COUNTDOWNS = new ConcurrentHashMap<>();
+
+    /** Round-start scarce items that didn't fit. Handed over by the resupply countdown - never dropped. */
+    private static final Map<UUID, List<ItemStack>> OWED_SCARCE = new ConcurrentHashMap<>();
 
     /**
      * Death path: top up after respawn, keeping what they carry. Items are handed over immediately
@@ -447,7 +639,7 @@ public final class KitService {
             if (ScarceItems.isScarce(want)) {
                 continue;
             }
-            int have = countMatching(inv, want);
+            int have = countEverywhere(inv, want);
             int deficit = want.getCount() - have;
             int given = 0;
             while (deficit > 0) {
@@ -549,7 +741,7 @@ public final class KitService {
                 scarceExcluded++;
                 continue;
             }
-            int have = countMatching(inv, want);
+            int have = countEverywhere(inv, want);
             int deficit = want.getCount() - have;
             missingTotal += Math.max(0, deficit);
             lines.add(Component.literal("  " + want.getHoverName().getString()
@@ -594,7 +786,10 @@ public final class KitService {
             }
             ServerPlayer p = server.getPlayerList().getPlayer(entry.getKey());
             if (p == null) {
-                it.remove();
+                // Kept while scarce items are owed, so a crash doesn't cost the weapon - resumes on rejoin.
+                if (!OWED_SCARCE.containsKey(entry.getKey())) {
+                    it.remove();
+                }
                 continue;
             }
 
@@ -609,7 +804,7 @@ public final class KitService {
             }
 
             KitDefinition kit = resolveKit(server, entry.getKey());
-            int stillToDrop = kit == null ? -1 : pendingStacks(p, kit);
+            int stillToDrop = kit == null && !OWED_SCARCE.containsKey(entry.getKey()) ? -1 : pendingStacks(p, kit);
 
             if (stillToDrop == 0 || cd.secondsLeft < 1) {
                 it.remove();
@@ -638,10 +833,23 @@ public final class KitService {
     }
 
     private static void finishResupply(MinecraftServer server, ServerPlayer p, KitDefinition kit) {
-        if (kit == null) {
+        boolean hadOwed = OWED_SCARCE.containsKey(p.getUUID());
+        List<ItemStack> stillOwed = deliverOwedScarce(p);
+        if (!stillOwed.isEmpty()) {
+            if (kit != null) {
+                topUp(p, kit);
+            }
+            // Scarce items are never dropped or forgotten - nag again until there's room.
+            p.sendSystemMessage(Component.literal("[Kit] Still no room for: "
+                    + stillOwed.stream().map(KitService::label).collect(Collectors.joining(", "))
+                    + " - drop something to receive it.").withStyle(ChatFormatting.RED));
+            startResupplyCountdown(p, owedCountdownSeconds(), 0);
             return;
         }
-        List<ItemStack> stillMissing = topUp(p, kit);
+        if (kit == null && !hadOwed) {
+            return;
+        }
+        List<ItemStack> stillMissing = kit == null ? List.of() : topUp(p, kit);
         p.connection.send(new ClientboundSetTitlesAnimationPacket(0, 30, 10));
         if (stillMissing.isEmpty()) {
             p.connection.send(new ClientboundSetTitleTextPacket(
@@ -674,11 +882,11 @@ public final class KitService {
         }
 
         int overflow = 0;
-        for (ItemStack want : merge(kit.inventory())) {
+        for (ItemStack want : kit == null ? List.<ItemStack>of() : merge(kit.inventory())) {
             if (ScarceItems.isScarce(want)) {
                 continue;
             }
-            int deficit = want.getCount() - countMatching(inv, want);
+            int deficit = want.getCount() - countEverywhere(inv, want);
             if (deficit <= 0) {
                 continue;
             }
@@ -695,6 +903,12 @@ public final class KitService {
                 continue;
             }
             int stacksNeeded = (deficit + want.getMaxStackSize() - 1) / want.getMaxStackSize();
+            int fromEmpty = Math.min(stacksNeeded, emptySlots);
+            emptySlots -= fromEmpty;
+            overflow += stacksNeeded - fromEmpty;
+        }
+        for (ItemStack want : OWED_SCARCE.getOrDefault(player.getUUID(), List.of())) {
+            int stacksNeeded = (want.getCount() + want.getMaxStackSize() - 1) / want.getMaxStackSize();
             int fromEmpty = Math.min(stacksNeeded, emptySlots);
             emptySlots -= fromEmpty;
             overflow += stacksNeeded - fromEmpty;

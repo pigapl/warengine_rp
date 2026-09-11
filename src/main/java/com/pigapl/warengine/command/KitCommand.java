@@ -165,7 +165,9 @@ public final class KitCommand {
                                 .executes(ctx -> testCountdown(ctx,
                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "seconds")))))
                 .then(Commands.argument("class", StringArgumentType.word()).suggests(SELF_APPLY_KIT_IDS)
-                        .executes(ctx -> applySelf(ctx, StringArgumentType.getString(ctx, "class")))));
+                        .executes(ctx -> applySelf(ctx, StringArgumentType.getString(ctx, "class"), false))
+                        .then(Commands.literal("confirm")
+                                .executes(ctx -> applySelf(ctx, StringArgumentType.getString(ctx, "class"), true)))));
     }
 
     private static int list(CommandContext<CommandSourceStack> ctx) {
@@ -530,7 +532,7 @@ public final class KitCommand {
         }
     }
 
-    private static int applySelf(CommandContext<CommandSourceStack> ctx, String id) {
+    private static int applySelf(CommandContext<CommandSourceStack> ctx, String id, boolean confirmed) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
         try {
@@ -541,8 +543,19 @@ public final class KitCommand {
         }
         String norm = KitStorage.normalizeId(id);
         // Ops bypass the team check so they can test any kit. The UI payload path applies the same
-        // rule, since both call KitService.assign rather than duplicating it.
-        KitService.AssignResult result = KitService.assign(player, norm, src.hasPermission(2));
+        // rule, since both call KitService.check/assign rather than duplicating it.
+        KitService.AssignResult result = KitService.check(player, norm, src.hasPermission(2));
+        if (result == KitService.AssignResult.OK && !confirmed) {
+            List<String> warning = KitService.scarceWarning(player, norm);
+            if (!warning.isEmpty()) {
+                warning.forEach(line -> src.sendFailure(Component.literal(line)));
+                src.sendFailure(Component.literal("Run /kit " + norm + " confirm to switch anyway."));
+                return 0;
+            }
+        }
+        if (result == KitService.AssignResult.OK) {
+            result = KitService.assign(player, norm, src.hasPermission(2));
+        }
         switch (result) {
             case UNKNOWN_KIT -> {
                 src.sendFailure(Component.literal("No such kit: " + id + ". Try /kit list."));
@@ -754,8 +767,11 @@ public final class KitCommand {
         Collection<ServerPlayer> targets = EntityArgument.getPlayers(ctx, "targets");
         WarState state = WarState.get(src.getServer());
         for (ServerPlayer target : targets) {
+            String old = state.getKit(target.getUUID());
             KitService.apply(target, kit);
             state.setKit(target.getUUID(), norm);
+            WarEngine.LOGGER.info("[kit] {} force-gave '{}' to {} (was '{}')", src.getTextName(), norm,
+                    target.getGameProfile().getName(), old);
             KitNetworking.sendKitState(target);
             KitNetworking.sendCatalogToSquad(src.getServer(), state.getSquad(target.getUUID()));
         }

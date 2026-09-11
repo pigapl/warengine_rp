@@ -26,6 +26,11 @@ public final class CreateSquadScreen extends Screen {
 
     private static final int FIELD_WIDTH = 200;
     private static final int FIELD_HEIGHT = 20;
+    private static final int LABEL_H = 11;
+    private static final int NAME_Y = LABEL_H;
+    private static final int LIMIT_LABEL_Y = NAME_Y + FIELD_HEIGHT + 5;
+    private static final int LIMIT_Y = LIMIT_LABEL_Y + LABEL_H;
+    private static final int FIELDS_H = LIMIT_Y + FIELD_HEIGHT + 10;
     private static final int DEFAULT_LIMIT = 6;
     private static final int PANEL_WIDTH = 260;
     private static final int ROW_H = 22;
@@ -63,7 +68,7 @@ public final class CreateSquadScreen extends Screen {
 
         int rowsShown = Math.min(budgets.size(), MAX_VISIBLE_ROWS);
         int listBlock = budgets.isEmpty() ? 0 : (14 + rowsShown * ROW_H);
-        int contentH = 60 + listBlock + 34;
+        int contentH = FIELDS_H + listBlock + 34;
         int top = Math.max(28, height / 2 - contentH / 2);
         panelTop = top;
         visibleRows = rowsShown;
@@ -71,15 +76,15 @@ public final class CreateSquadScreen extends Screen {
         String prevName = nameBox != null ? nameBox.getValue() : "";
         String prevLimit = limitBox != null ? limitBox.getValue() : Integer.toString(DEFAULT_LIMIT);
 
-        nameBox = new EditBox(font, centerX - FIELD_WIDTH / 2, top, FIELD_WIDTH, FIELD_HEIGHT,
+        nameBox = new EditBox(font, centerX - FIELD_WIDTH / 2, top + NAME_Y, FIELD_WIDTH, FIELD_HEIGHT,
                 Component.literal("Squad name"));
         nameBox.setMaxLength(SquadService.NAME_MAX_LENGTH);
-        nameBox.setHint(Component.literal("Squad name").withStyle(ChatFormatting.DARK_GRAY));
+        nameBox.setHint(Component.literal("e.g. Alpha").withStyle(ChatFormatting.DARK_GRAY));
         nameBox.setValue(prevName);
         addRenderableWidget(nameBox);
         setInitialFocus(nameBox);
 
-        limitBox = new EditBox(font, centerX - FIELD_WIDTH / 2, top + 30, FIELD_WIDTH, FIELD_HEIGHT,
+        limitBox = new EditBox(font, centerX - FIELD_WIDTH / 2, top + LIMIT_Y, FIELD_WIDTH, FIELD_HEIGHT,
                 Component.literal("Max players"));
         limitBox.setMaxLength(3);
         limitBox.setFilter(s -> s.isEmpty() || s.chars().allMatch(Character::isDigit));
@@ -99,7 +104,7 @@ public final class CreateSquadScreen extends Screen {
             }
         }
 
-        listTop = top + 60 + 14;
+        listTop = top + FIELDS_H + 14;
         if (!budgets.isEmpty()) {
             scroll = Math.max(0, Math.min(scroll, budgets.size() - rowsShown));
             int stepX = centerX + PANEL_WIDTH / 2 - 96;
@@ -122,13 +127,14 @@ public final class CreateSquadScreen extends Screen {
             }
         }
 
-        buttonsY = budgets.isEmpty() ? top + 64 : listTop + rowsShown * ROW_H + 8;
+        buttonsY = budgets.isEmpty() ? top + FIELDS_H + 4 : listTop + rowsShown * ROW_H + 8;
         int buttonWidth = 90;
-        addRenderableWidget(Button.builder(Component.literal("Create"), b -> tryCreate())
-                .bounds(centerX - buttonWidth - 4, buttonsY, buttonWidth, 20)
-                .build());
+        // Confirm on the right - players on stream kept hitting the wrong one when it was on the left.
         addRenderableWidget(Button.builder(Component.literal("Back"),
                         b -> Minecraft.getInstance().setScreen(new SquadPickerScreen()))
+                .bounds(centerX - buttonWidth - 4, buttonsY, buttonWidth, 20)
+                .build());
+        addRenderableWidget(Button.builder(Component.literal("Create"), b -> tryCreate())
                 .bounds(centerX + 4, buttonsY, buttonWidth, 20)
                 .build());
     }
@@ -216,8 +222,13 @@ public final class CreateSquadScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, panelTop - 18, PickerLayout.TITLE_COLOR);
 
-        List<KitBudgetEntry> budgets = ClientKitBudgetCache.entries();
         int centerX = width / 2;
+        int fieldX = centerX - FIELD_WIDTH / 2;
+        graphics.drawString(font, "Squad name", fieldX, panelTop, PickerLayout.HINT_COLOR);
+        graphics.drawString(font, "Max players (" + SquadService.MIN_LIMIT + "-" + SquadService.MAX_LIMIT + ")",
+                fieldX, panelTop + LIMIT_LABEL_Y, PickerLayout.HINT_COLOR);
+
+        List<KitBudgetEntry> budgets = ClientKitBudgetCache.entries();
 
         if (!budgets.isEmpty()) {
             graphics.drawString(font, "Squad kit reservations", centerX - PANEL_WIDTH / 2,

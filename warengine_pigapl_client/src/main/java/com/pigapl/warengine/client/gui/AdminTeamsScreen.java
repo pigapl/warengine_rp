@@ -14,7 +14,9 @@ import com.pigapl.warengine.network.ServerboundAdminKickSquadMemberPayload;
 import com.pigapl.warengine.network.ServerboundAdminMoveToTeamPayload;
 import com.pigapl.warengine.network.ServerboundAdminRestoreTeamsPayload;
 import com.pigapl.warengine.network.ServerboundAdminSetTeamBasePayload;
+import com.pigapl.warengine.network.ServerboundAdminSendToBasePayload;
 import com.pigapl.warengine.network.ServerboundAdminTeleportToPlayerPayload;
+import net.minecraft.client.gui.components.Tooltip;
 import com.pigapl.warengine.network.ServerboundAdminTeleportToTeamBasePayload;
 import com.pigapl.warengine.network.ServerboundAdminUpsertTeamPayload;
 import com.pigapl.warengine.network.ServerboundRequestAdminKitsSnapshotPayload;
@@ -134,7 +136,12 @@ public final class AdminTeamsScreen extends Screen {
             } else {
                 addRenderableWidget(Button.builder(Component.literal("TP"),
                                 b -> PacketDistributor.sendToServer(new ServerboundAdminTeleportToPlayerPayload(member.uuid())))
-                        .bounds(teamMemberButtonsX(), y - 1, 36, ROW_HEIGHT - 2).build());
+                        .bounds(teamMemberButtonsX(), y - 1, 24, ROW_HEIGHT - 2).build());
+                addRenderableWidget(Button.builder(Component.literal("Home"),
+                                b -> PacketDistributor.sendToServer(
+                                        new ServerboundAdminSendToBasePayload(member.uuid())))
+                        .tooltip(Tooltip.create(Component.literal("Send this player to their team's base")))
+                        .bounds(right - 84, y - 1, 36, ROW_HEIGHT - 2).build());
                 addRenderableWidget(Button.builder(Component.literal("Move"), b -> openTeamPicker(member, teams))
                         .bounds(right - 46, y - 1, 46, ROW_HEIGHT - 2).build());
             }
@@ -171,7 +178,7 @@ public final class AdminTeamsScreen extends Screen {
     }
 
     private int teamMemberButtonsX() {
-        return right - 84;
+        return right - 110;
     }
 
     private int squadHeaderButtonsX() {
@@ -315,8 +322,9 @@ public final class AdminTeamsScreen extends Screen {
                 graphics.drawString(font, text, left + 18, y, 0xFFFFFFFF);
                 drawDottedLine(graphics, left + 18 + font.width(text), teamHeaderButtonsX(), y + 4, PickerLayout.HINT_COLOR);
             } else {
-                String text = "  " + member.name();
-                graphics.drawString(font, text, left + 18, y, PickerLayout.HINT_COLOR);
+                String text = font.plainSubstrByWidth("  " + member.name() + farTag(member),
+                        Math.max(20, teamMemberButtonsX() - 4 - (left + 18)));
+                graphics.drawString(font, text, left + 18, y, memberColor(member, team.members().indexOf(member)));
                 drawDottedLine(graphics, left + 18 + font.width(text), teamMemberButtonsX(), y + 4, 0xFF4A4A54);
             }
         });
@@ -339,14 +347,29 @@ public final class AdminTeamsScreen extends Screen {
                 drawDottedLine(graphics, left + 6 + font.width(text), squadHeaderButtonsX(), y + 6, PickerLayout.HINT_COLOR);
             } else {
                 String kit = member.kitId().isEmpty() ? "(no kit)" : member.kitId();
-                String tag = member.online() ? "" : "  (offline)";
-                int color = member.online() ? PickerLayout.HINT_COLOR : 0xFF6A6A72;
-                String text = "  " + member.name() + tag + "  -  " + kit;
-                graphics.drawString(font, text, left + 6, y + 2, color);
+                String tag = member.online() ? farTag(member) : "  (offline)";
+                String text = font.plainSubstrByWidth("  " + member.name() + tag + "  -  " + kit,
+                        Math.max(20, squadMemberButtonsX() - 4 - (left + 6)));
+                graphics.drawString(font, text, left + 6, y + 2, memberColor(member, squad.members().indexOf(member)));
                 drawDottedLine(graphics, left + 6 + font.width(text), squadMemberButtonsX(), y + 6, 0xFF4A4A54);
             }
         });
         graphics.disableScissor();
+    }
+
+    // Alternating rows so neighbours are easy to tell apart; out-of-base (pre-war only) wins over both.
+    private static int memberColor(AdminPlayerInfo member, int index) {
+        if (!member.online()) {
+            return 0xFF6A6A72;
+        }
+        if (member.farFromBase() >= 0) {
+            return 0xFFFF8A65;
+        }
+        return index % 2 == 0 ? 0xFFFFFFFF : 0xFFC4C4CC;
+    }
+
+    private static String farTag(AdminPlayerInfo member) {
+        return member.farFromBase() >= 0 ? "  (" + member.farFromBase() + "m from base)" : "";
     }
 
     private void drawDottedLine(GuiGraphics graphics, int x1, int x2, int y, int color) {

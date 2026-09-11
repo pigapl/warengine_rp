@@ -76,6 +76,10 @@ public final class RoundService {
 
         // The whistle is the one moment scarce weapons enter the world - kit pick and respawn both
         // withhold them. See KitService#issueScarceWeapons. No-op when the scarce list is empty.
+        WarEngine.LOGGER.info("[war] scarce list at the whistle: [{}]",
+                com.pigapl.warengine.kit.ScarceItems.all().stream()
+                        .map(com.pigapl.warengine.kit.KitService::label)
+                        .collect(java.util.stream.Collectors.joining(", ")));
         int scarce = com.pigapl.warengine.kit.KitService.issueScarceWeapons(server);
 
         int cap = WarConfig.ROUND_TICKET_CAP.get();

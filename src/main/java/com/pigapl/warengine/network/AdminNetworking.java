@@ -100,6 +100,8 @@ public final class AdminNetworking {
         registrar.playToServer(ServerboundAdminTeleportAllToBasesPayload.TYPE,
                 ServerboundAdminTeleportAllToBasesPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleTeleportAllToBases(context)));
+        registrar.playToServer(ServerboundAdminSendToBasePayload.TYPE, ServerboundAdminSendToBasePayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleSendToBase(payload, context)));
 
         registrar.playToServer(ServerboundAdminTeleportToPlayerPayload.TYPE, ServerboundAdminTeleportToPlayerPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleTeleportToPlayer(payload, context)));
@@ -229,6 +231,8 @@ public final class AdminNetworking {
             return;
         }
         int cap = Math.max(1, Math.min(1_000_000, payload.cap()));
+        WarEngine.LOGGER.info("[war] {} set ticket cap {} -> {}", player.getGameProfile().getName(),
+                WarConfig.ROUND_TICKET_CAP.get(), cap);
         WarConfig.ROUND_TICKET_CAP.set(cap);
         PacketDistributor.sendToPlayer(player, buildSnapshot(player.server));
     }
@@ -474,12 +478,37 @@ public final class AdminNetworking {
         }
         String norm = KitStorage.normalizeId(payload.kitId());
         KitStorage.get(norm).ifPresent(kit -> {
+            String old = WarState.get(server).getKit(target.getUUID());
             KitService.apply(target, kit);
             WarState.get(server).setKit(target.getUUID(), norm);
+            WarEngine.LOGGER.info("[kit] {} force-gave '{}' to {} (was '{}')", admin.getGameProfile().getName(),
+                    norm, target.getGameProfile().getName(), old);
             KitNetworking.sendKitState(target);
             KitNetworking.sendCatalogToSquad(server, WarState.get(server).getSquad(target.getUUID()));
         });
         PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
+    }
+
+    private static void handleSendToBase(ServerboundAdminSendToBasePayload payload, IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        ServerPlayer target = admin.server.getPlayerList().getPlayer(payload.target());
+        if (target == null) {
+            return;
+        }
+        String name = target.getGameProfile().getName();
+        if (BaseService.teleportToOwnBase(target)) {
+            admin.sendSystemMessage(Component.literal("Sent " + name + " to their team's base.")
+                    .withStyle(ChatFormatting.GREEN));
+            target.sendSystemMessage(Component.literal("An admin sent you back to your team's base.")
+                    .withStyle(ChatFormatting.YELLOW));
+            WarEngine.LOGGER.info("[base] {} sent {} to their team base", admin.getGameProfile().getName(), name);
+        } else {
+            admin.sendSystemMessage(Component.literal(name + "'s team has no base set.")
+                    .withStyle(ChatFormatting.RED));
+        }
     }
 
     private static void handleForceResupply(ServerboundAdminForceResupplyPayload payload, IPayloadContext context) {
@@ -704,7 +733,7 @@ public final class AdminNetworking {
                 if (team.equalsIgnoreCase(TeamService.getTeam(server, p))) {
                     String kitId = st.getKit(p.getUUID());
                     members.add(new AdminPlayerInfo(p.getGameProfile().getName(), p.getUUID(), true,
-                            kitId == null ? "" : kitId));
+                            kitId == null ? "" : kitId, farFromBase(p, st)));
                 }
             }
             String displayName = live == null ? team : live.getDisplayName().getString();
@@ -717,14 +746,28 @@ public final class AdminNetworking {
         for (WarState.SquadRecord record : st.squads().values()) {
             List<AdminPlayerInfo> members = new ArrayList<>();
             for (UUID id : st.squadMembers(record.id)) {
-                boolean online = server.getPlayerList().getPlayer(id) != null;
+                ServerPlayer livePlayer = server.getPlayerList().getPlayer(id);
                 String kitId = st.getKit(id);
-                members.add(new AdminPlayerInfo(resolveName(server, id), id, online, kitId == null ? "" : kitId));
+                members.add(new AdminPlayerInfo(resolveName(server, id), id, livePlayer != null,
+                        kitId == null ? "" : kitId, farFromBase(livePlayer, st)));
             }
             squads.add(new AdminSquadDetail(record.id, record.team, record.name, record.limit, members));
         }
 
         return new ClientboundAdminTeamsSnapshotPayload(teams, squads);
+    }
+
+    /** Pre-war only - mid-war everyone is out, so highlighting them all would just be noise. */
+    private static int farFromBase(ServerPlayer p, WarState st) {
+        if (p == null || st.roundActive()) {
+            return -1;
+        }
+        String team = TeamService.getTeam(p.server, p);
+        if (team == null || BaseService.of(p.server, team) == null || BaseService.withinKitRange(p, team)) {
+            return -1;
+        }
+        double d = BaseService.distanceTo(p, team);
+        return d < 0 ? 99_999 : (int) Math.round(d); // -1 = other dimension, which is certainly far
     }
 
     public static ClientboundAdminKitsSnapshotPayload buildKitsSnapshot(MinecraftServer server) {
