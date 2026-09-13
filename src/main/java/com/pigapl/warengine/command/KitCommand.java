@@ -586,7 +586,9 @@ public final class KitCommand {
             }
             case TOO_FAR_FROM_BASE -> {
                 src.sendFailure(Component.literal("Too far from your team's base to change kit - "
-                        + "get within " + Math.round(WarConfig.BASE_KIT_RADIUS.get()) + " blocks of it."));
+                        + "get within " + Math.round(com.pigapl.warengine.base.BaseService.radiusFor(player.server,
+                                com.pigapl.warengine.team.TeamService.getTeam(player.server, player)))
+                        + " blocks of it."));
                 return 0;
             }
             case OK -> { }

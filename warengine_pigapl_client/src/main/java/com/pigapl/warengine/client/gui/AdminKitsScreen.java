@@ -125,8 +125,7 @@ public final class AdminKitsScreen extends Screen {
             graphics.pose().popPose();
 
             String teams = kit.assignedTeams().isEmpty() ? "(admin only)" : String.join(", ", kit.assignedTeams());
-            String limit = kit.limit() <= 0 ? "unlimited" : ("limit " + kit.limit());
-            graphics.drawString(font, kit.displayName() + "  [" + kit.id() + "]  -  " + limit,
+            graphics.drawString(font, kit.displayName() + "  [" + kit.id() + "]",
                     listLeft + 24, y + 1, 0xFFFFFFFF);
             graphics.drawString(font, "teams: " + teams, listLeft + 24, y + 11, PickerLayout.HINT_COLOR);
             y += ROW_HEIGHT;

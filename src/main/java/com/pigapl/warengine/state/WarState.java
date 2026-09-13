@@ -32,6 +32,12 @@ public final class WarState extends SavedData {
         /** When {@link #kitId} last CHANGED. Re-picking the same kit does not bump it - seniority is kept. */
         public long kitAssignedAtMs;
         public String squadId;
+        /** An admin who is also playing: skips the base restrictions and the nags, nothing else. */
+        public boolean exempt;
+        /** Team this player commands, or null. Stamped with the team so a switch drops the role. */
+        public String commanderOf;
+        /** Team this player may found a squad on, or null. Same team-stamping as {@link #commanderOf}. */
+        public String leaderOf;
 
         PlayerRecord() {}
     }
@@ -41,6 +47,8 @@ public final class WarState extends SavedData {
         public final String team;
         public String name;
         public int limit;
+        /** Who leads this squad, or null. Set to the founder unless a commander founded it. */
+        public UUID leader;
         /** For budgeted kits this number IS the squad's cap; 0 means the kit is not offered to it. */
         public final Map<String, Integer> kitReservations = new LinkedHashMap<>();
 
@@ -57,6 +65,8 @@ public final class WarState extends SavedData {
     private int nextSquadSeq = 1;
 
     private boolean roundActive;
+    /** Admin toggle: pull players back to base before the war. Off by default. */
+    private boolean keepInBase;
     /** Wall-clock end of the round. Epoch millis, not a server tick - tick counts reset on restart. */
     private long roundEndEpochMillis;
     private final Map<String, Integer> tickets = new LinkedHashMap<>();
@@ -116,13 +126,16 @@ public final class WarState extends SavedData {
         public final double y;
         public final double z;
         public final float yaw;
+        /** Blocks; 0 = use bases.kitRadius. One size for kit picking AND the base lock. */
+        public final double radius;
 
-        TeamBase(String dim, double x, double y, double z, float yaw) {
+        TeamBase(String dim, double x, double y, double z, float yaw, double radius) {
             this.dim = dim;
             this.x = x;
             this.y = y;
             this.z = z;
             this.yaw = yaw;
+            this.radius = radius;
         }
     }
 
@@ -168,9 +181,56 @@ public final class WarState extends SavedData {
     }
 
 
+    public String getCommanderOf(UUID id) {
+        PlayerRecord r = players.get(id);
+        return r == null ? null : r.commanderOf;
+    }
+
+    public void setCommanderOf(UUID id, String team) {
+        record(id).commanderOf = team;
+        setDirty();
+    }
+
+    public String getLeaderOf(UUID id) {
+        PlayerRecord r = players.get(id);
+        return r == null ? null : r.leaderOf;
+    }
+
+    public void setLeaderOf(UUID id, String team) {
+        record(id).leaderOf = team;
+        setDirty();
+    }
+
+    public void setSquadLeader(String squadId, UUID leader) {
+        SquadRecord s = squads.get(squadId);
+        if (s != null) {
+            s.leader = leader;
+            setDirty();
+        }
+    }
+
+    public boolean isExempt(UUID id) {
+        PlayerRecord r = players.get(id);
+        return r != null && r.exempt;
+    }
+
+    public void setExempt(UUID id, boolean exempt) {
+        record(id).exempt = exempt;
+        setDirty();
+    }
+
     public String getSquad(UUID id) {
         PlayerRecord r = players.get(id);
-        return r == null ? null : r.squadId;
+        if (r == null || r.squadId == null) {
+            return null;
+        }
+        // Self-heal: worlds saved before deleteSquad cleared its members still hold dangling ids.
+        if (!squads.containsKey(r.squadId)) {
+            r.squadId = null;
+            setDirty();
+            return null;
+        }
+        return r.squadId;
     }
 
     public void setSquad(UUID id, String squadId) {
@@ -226,6 +286,13 @@ public final class WarState extends SavedData {
     /** Removes a squad's registration (its members are NOT auto-cleared - callers do that first). */
     public void deleteSquad(String squadId) {
         if (squads.remove(squadId) != null) {
+            // Never leave a member pointing at a squad that is gone: a dangling id reads as "squad with
+            // no reservations", which silently hides EVERY kit from that player.
+            players.forEach((id, r) -> {
+                if (squadId.equals(r.squadId)) {
+                    r.squadId = null;
+                }
+            });
             setDirty();
         }
     }
@@ -259,6 +326,15 @@ public final class WarState extends SavedData {
 
     public boolean roundActive() {
         return roundActive;
+    }
+
+    public boolean keepInBase() {
+        return keepInBase;
+    }
+
+    public void setKeepInBase(boolean value) {
+        keepInBase = value;
+        setDirty();
     }
 
     public long roundEndEpochMillis() {
@@ -384,8 +460,20 @@ public final class WarState extends SavedData {
     }
 
     public void setBase(String team, String dim, double x, double y, double z, float yaw) {
-        bases.put(team.toLowerCase(Locale.ROOT), new TeamBase(dim, x, y, z, yaw));
+        String key = team.toLowerCase(Locale.ROOT);
+        TeamBase old = bases.get(key);
+        // Moving a base keeps the size an admin already gave it.
+        bases.put(key, new TeamBase(dim, x, y, z, yaw, old == null ? 0.0 : old.radius));
         setDirty();
+    }
+
+    public void setBaseRadius(String team, double radius) {
+        String key = team.toLowerCase(Locale.ROOT);
+        TeamBase b = bases.get(key);
+        if (b != null) {
+            bases.put(key, new TeamBase(b.dim, b.x, b.y, b.z, b.yaw, radius));
+            setDirty();
+        }
     }
 
     public boolean clearBase(String team) {
@@ -417,6 +505,13 @@ public final class WarState extends SavedData {
             if (e.contains("squad", Tag.TAG_STRING)) {
                 r.squadId = e.getString("squad");
             }
+            r.exempt = e.getBoolean("exempt");
+            if (e.contains("cmdOf", Tag.TAG_STRING)) {
+                r.commanderOf = e.getString("cmdOf");
+            }
+            if (e.contains("ldrOf", Tag.TAG_STRING)) {
+                r.leaderOf = e.getString("ldrOf");
+            }
             state.players.put(e.getUUID("uuid"), r);
         }
 
@@ -436,6 +531,9 @@ public final class WarState extends SavedData {
                         }
                     }
                 }
+                if (s.hasUUID("leader")) {
+                    record.leader = s.getUUID("leader");
+                }
                 state.squads.put(id, record);
                 // Recover the counter from the highest "sqN" seen, so a squad created after a reload
                 // never collides with one loaded from disk.
@@ -451,6 +549,7 @@ public final class WarState extends SavedData {
         }
 
         state.roundActive = tag.getBoolean("roundActive");
+        state.keepInBase = tag.getBoolean("keepInBase");
         state.roundEndEpochMillis = tag.getLong("roundEndEpochMillis");
         if (tag.contains("tickets", Tag.TAG_COMPOUND)) {
             CompoundTag tk = tag.getCompound("tickets");
@@ -502,7 +601,7 @@ public final class WarState extends SavedData {
                 CompoundTag b = baseList.getCompound(i);
                 state.bases.put(b.getString("team").toLowerCase(Locale.ROOT),
                         new TeamBase(b.getString("dim"), b.getDouble("x"), b.getDouble("y"),
-                                b.getDouble("z"), b.getFloat("yaw")));
+                                b.getDouble("z"), b.getFloat("yaw"), b.getDouble("radius")));
             }
         }
         return state;
@@ -523,6 +622,15 @@ public final class WarState extends SavedData {
             if (r.squadId != null) {
                 e.putString("squad", r.squadId);
             }
+            if (r.exempt) {
+                e.putBoolean("exempt", true);
+            }
+            if (r.commanderOf != null) {
+                e.putString("cmdOf", r.commanderOf);
+            }
+            if (r.leaderOf != null) {
+                e.putString("ldrOf", r.leaderOf);
+            }
             list.add(e);
         });
         tag.put("players", list);
@@ -534,6 +642,9 @@ public final class WarState extends SavedData {
             s.putString("team", record.team);
             s.putString("name", record.name);
             s.putInt("limit", record.limit);
+            if (record.leader != null) {
+                s.putUUID("leader", record.leader);
+            }
             if (!record.kitReservations.isEmpty()) {
                 CompoundTag res = new CompoundTag();
                 record.kitReservations.forEach(res::putInt);
@@ -544,6 +655,7 @@ public final class WarState extends SavedData {
         tag.put("squads", squadList);
 
         tag.putBoolean("roundActive", roundActive);
+        tag.putBoolean("keepInBase", keepInBase);
         tag.putLong("roundEndEpochMillis", roundEndEpochMillis);
         CompoundTag tk = new CompoundTag();
         tickets.forEach(tk::putInt);
@@ -595,6 +707,9 @@ public final class WarState extends SavedData {
             b.putDouble("y", base.y);
             b.putDouble("z", base.z);
             b.putFloat("yaw", base.yaw);
+            if (base.radius > 0.0) {
+                b.putDouble("radius", base.radius);
+            }
             baseList.add(b);
         });
         tag.put("bases", baseList);

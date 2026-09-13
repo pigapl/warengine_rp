@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.List;
 
 /** Op-gated server-side - payload handlers get no automatic permission check. */
-public record ClientboundAdminSnapshotPayload(boolean warActive, long timeLeftMillis, int ticketCap,
+public record ClientboundAdminSnapshotPayload(AdminEventFlags flags, long timeLeftMillis, int ticketCap,
                                                List<AdminTeamInfo> teams, List<AdminPointInfo> points,
                                                List<AdminHistoryEntry> history) implements CustomPacketPayload {
 
@@ -18,7 +18,7 @@ public record ClientboundAdminSnapshotPayload(boolean warActive, long timeLeftMi
             new Type<>(ResourceLocation.fromNamespaceAndPath(WarEngine.MODID, "admin_snapshot"));
 
     public static final StreamCodec<ByteBuf, ClientboundAdminSnapshotPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.BOOL, ClientboundAdminSnapshotPayload::warActive,
+            AdminEventFlags.STREAM_CODEC, ClientboundAdminSnapshotPayload::flags,
             ByteBufCodecs.VAR_LONG, ClientboundAdminSnapshotPayload::timeLeftMillis,
             ByteBufCodecs.VAR_INT, ClientboundAdminSnapshotPayload::ticketCap,
             AdminTeamInfo.STREAM_CODEC.apply(ByteBufCodecs.list()), ClientboundAdminSnapshotPayload::teams,
@@ -26,6 +26,14 @@ public record ClientboundAdminSnapshotPayload(boolean warActive, long timeLeftMi
             AdminHistoryEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), ClientboundAdminSnapshotPayload::history,
             ClientboundAdminSnapshotPayload::new
     );
+
+    public boolean warActive() {
+        return flags.warActive();
+    }
+
+    public boolean keepInBase() {
+        return flags.keepInBase();
+    }
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

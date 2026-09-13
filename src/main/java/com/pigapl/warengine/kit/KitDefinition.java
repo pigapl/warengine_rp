@@ -38,7 +38,11 @@ public record KitDefinition(List<ItemStack> armor, ItemStack offhand, List<ItemS
         return displayName.orElse(kitId);
     }
 
-    /** Per-SQUAD cap ({@code <= 0} = unlimited). A budgeted kit's reservation overrides it. */
+    /**
+     * @deprecated Vestigial. Kit caps come from team budgets + squad reservations only; nothing reads
+     *     this any more and no screen sets it. Kept so old kit JSON still round-trips.
+     */
+    @Deprecated
     public int limitOrUnlimited() {
         return limit.orElse(0);
     }

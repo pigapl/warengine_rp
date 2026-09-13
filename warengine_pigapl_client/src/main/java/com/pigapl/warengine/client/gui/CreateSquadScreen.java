@@ -66,6 +66,8 @@ public final class CreateSquadScreen extends Screen {
         List<KitBudgetEntry> budgets = ClientKitBudgetCache.entries();
         int centerX = width / 2;
 
+        // The list can shrink while this screen is open (a team change), stranding the scroll offset.
+        scroll = Math.max(0, Math.min(scroll, Math.max(0, budgets.size() - MAX_VISIBLE_ROWS)));
         int rowsShown = Math.min(budgets.size(), MAX_VISIBLE_ROWS);
         int listBlock = budgets.isEmpty() ? 0 : (14 + rowsShown * ROW_H);
         int contentH = FIELDS_H + listBlock + 34;
@@ -202,7 +204,7 @@ public final class CreateSquadScreen extends Screen {
             return;
         }
         PacketDistributor.sendToServer(new ServerboundCreateSquadPayload(name, limit, new LinkedHashMap<>(chosen)));
-        onClose();
+        Minecraft.getInstance().setScreen(new KitPickerScreen(true));
     }
 
     @Override
@@ -234,7 +236,10 @@ public final class CreateSquadScreen extends Screen {
             graphics.drawString(font, "Squad kit reservations", centerX - PANEL_WIDTH / 2,
                     listTop - 12, 0xFFFFFFFF);
             int stepX = centerX + PANEL_WIDTH / 2 - 96;
-            for (int r = 0; r < visibleRows; r++) {
+            // Bound by the LIVE list, never by visibleRows alone: that count is cached in init(), and a
+            // team change swaps the budget list under an open screen. One frame of that crashed a client.
+            int rows = Math.min(visibleRows, Math.max(0, budgets.size() - scroll));
+            for (int r = 0; r < rows; r++) {
                 KitBudgetEntry entry = budgets.get(scroll + r);
                 int rowY = listTop + r * ROW_H;
                 int cur = chosen.getOrDefault(entry.kitId(), 0);

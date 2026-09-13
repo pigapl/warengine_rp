@@ -11,6 +11,8 @@ import com.pigapl.warengine.network.ServerboundAdminSetTicketCapPayload;
 import com.pigapl.warengine.network.ServerboundAdminStartWarPayload;
 import com.pigapl.warengine.network.ServerboundAdminTeleportAllToBasesPayload;
 import com.pigapl.warengine.network.ServerboundAdminTeleportToPointPayload;
+import com.pigapl.warengine.network.ServerboundAdminToggleKeepInBasePayload;
+import net.minecraft.client.gui.components.Tooltip;
 import com.pigapl.warengine.network.ServerboundRequestAdminSnapshotPayload;
 import com.pigapl.warengine.network.client.ClientAdminCache;
 import net.minecraft.ChatFormatting;
@@ -107,6 +109,8 @@ public final class AdminScreen extends Screen {
      * {@link #planRow} centers the middle item in the gap between the anchored groups, not on screen -
      * true centering needed ~600px before anything shared a row.
      */
+    private Button keepInBaseButton;
+
     private int layoutControls(int startY, boolean createWidgets) {
         int rowH = CONTROL_ROW_HEIGHT;
         int gap = CONTROL_GAP;
@@ -182,7 +186,24 @@ public final class AdminScreen extends Screen {
         }
         y += (Math.max(plan2[0], plan2[1]) + 1) * (rowH + gap);
 
+        if (createWidgets) {
+            keepInBaseButton = addRenderableWidget(Button.builder(keepInBaseLabel(),
+                            b -> PacketDistributor.sendToServer(new ServerboundAdminToggleKeepInBasePayload()))
+                    .tooltip(Tooltip.create(Component.literal("Before the war: a player who leaves base gets a "
+                            + "short countdown, then is teleported back. Admin mode (Ex) players are skipped.")))
+                    .bounds(leftX, y, 130, rowH).build());
+        }
+        y += rowH + gap;
+
         return y - gap;
+    }
+
+    // This screen rebuilds only when the SET of points changes, so the label is refreshed from tick().
+    private static Component keepInBaseLabel() {
+        ClientboundAdminSnapshotPayload snap = ClientAdminCache.snapshot();
+        boolean on = snap != null && snap.keepInBase();
+        return Component.literal("Base lock: " + (on ? "ON" : "OFF"))
+                .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY);
     }
 
     private int[] planRow(int leftWidth, int centerWidth, int rightWidth) {
@@ -238,6 +259,9 @@ public final class AdminScreen extends Screen {
                 }
             }
             lastPointIdsSeen = idSignature;
+        }
+        if (keepInBaseButton != null) {
+            keepInBaseButton.setMessage(keepInBaseLabel());
         }
         if (flashTicks > 0) {
             flashTicks--;

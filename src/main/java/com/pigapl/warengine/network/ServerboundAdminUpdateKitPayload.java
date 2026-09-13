@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-public record ServerboundAdminUpdateKitPayload(String kitId, String displayName, int limit)
+public record ServerboundAdminUpdateKitPayload(String kitId, String displayName)
         implements CustomPacketPayload {
 
     public static final Type<ServerboundAdminUpdateKitPayload> TYPE =
@@ -16,7 +16,6 @@ public record ServerboundAdminUpdateKitPayload(String kitId, String displayName,
     public static final StreamCodec<ByteBuf, ServerboundAdminUpdateKitPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.STRING_UTF8, ServerboundAdminUpdateKitPayload::kitId,
             ByteBufCodecs.STRING_UTF8, ServerboundAdminUpdateKitPayload::displayName,
-            ByteBufCodecs.VAR_INT, ServerboundAdminUpdateKitPayload::limit,
             ServerboundAdminUpdateKitPayload::new
     );
 

@@ -22,15 +22,17 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Drives all three pickers. The server never tells the client to open one - which screen is owed is
- * derived from state the client already has, as a {@code Team -> Squad -> Kit} chain. Each auto-opens
- * at most once per state, so closing one does not fight the player.
+ * derived from state the client already has, as a {@code Team -> Squad -> Kit} chain.
+ *
+ * <p>Only the TEAM picker auto-opens, and at most once per teamless state so closing it does not
+ * fight the player. Squad and kit are deliberately pull-only (the menu key): players pick those in
+ * their own time before the whistle, and being thrown into a screen mid-build was the event 1
+ * complaint.</p>
  */
 @EventBusSubscriber(modid = WarEngineClient.MODID, value = Dist.CLIENT)
 public final class ClientEvents {
 
     private static boolean autoOpenedTeamPicker = false;
-    private static boolean autoOpenedSquadPicker = false;
-    private static boolean autoOpenedKitPicker = false;
 
     private ClientEvents() {}
 
@@ -56,6 +58,11 @@ public final class ClientEvents {
             mc.setScreen(new AdminScreen());
         }
 
+        // The one squad/kit screen that still opens itself: the sweep took the player's kit away.
+        if (ClientKitCache.consumePickerReopen()) {
+            mc.setScreen(new KitPickerScreen());
+        }
+
         ClientKitCache.PendingConfirm confirm = ClientKitCache.consumePendingConfirm();
         if (confirm != null) {
             mc.setScreen(new ConfirmScreen(yes -> {
@@ -74,43 +81,16 @@ public final class ClientEvents {
 
         if (mc.player == null || mc.level == null) {
             autoOpenedTeamPicker = false;
-            autoOpenedSquadPicker = false;
-            autoOpenedKitPicker = false;
             return;
         }
 
-        boolean hasTeam = mc.player.getTeam() != null;
-        if (!hasTeam) {
-            autoOpenedSquadPicker = false;
-            autoOpenedKitPicker = false;
+        if (mc.player.getTeam() == null) {
             if (!autoOpenedTeamPicker && mc.screen == null) {
                 autoOpenedTeamPicker = true;
                 mc.setScreen(new TeamPickerScreen());
             }
-            return;
-        }
-        autoOpenedTeamPicker = false;
-
-        boolean hasSquad = !ClientSquadCache.squadId().isEmpty();
-        if (!hasSquad) {
-            autoOpenedKitPicker = false;
-            // Wait for the list rather than flashing an empty screen. An empty list is still valid.
-            if (!autoOpenedSquadPicker && mc.screen == null) {
-                autoOpenedSquadPicker = true;
-                mc.setScreen(new SquadPickerScreen());
-            }
-            return;
-        }
-        autoOpenedSquadPicker = false;
-
-        if (ClientKitCache.kitId().isEmpty()) {
-            // Same: wait for the catalog, sent right after the squad assignment lands.
-            if (!autoOpenedKitPicker && mc.screen == null && !ClientKitCache.catalog().isEmpty()) {
-                autoOpenedKitPicker = true;
-                mc.setScreen(new KitPickerScreen());
-            }
         } else {
-            autoOpenedKitPicker = false;
+            autoOpenedTeamPicker = false;
         }
     }
 

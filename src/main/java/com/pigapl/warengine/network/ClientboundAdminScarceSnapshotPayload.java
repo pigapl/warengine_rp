@@ -10,14 +10,21 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
-public record ClientboundAdminScarceSnapshotPayload(List<ItemStack> items) implements CustomPacketPayload {
+/** {@code kitItems}: every distinct item used by any saved kit, so the bulk screen can list them. */
+public record ClientboundAdminScarceSnapshotPayload(List<ItemStack> items, List<ItemStack> kitItems)
+        implements CustomPacketPayload {
 
     public static final Type<ClientboundAdminScarceSnapshotPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(WarEngine.MODID, "admin_scarce_snapshot"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundAdminScarceSnapshotPayload> STREAM_CODEC =
-            ItemStack.STREAM_CODEC.apply(ByteBufCodecs.list())
-                    .map(ClientboundAdminScarceSnapshotPayload::new, ClientboundAdminScarceSnapshotPayload::items);
+            StreamCodec.composite(
+                    ItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                    ClientboundAdminScarceSnapshotPayload::items,
+                    ItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                    ClientboundAdminScarceSnapshotPayload::kitItems,
+                    ClientboundAdminScarceSnapshotPayload::new
+            );
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

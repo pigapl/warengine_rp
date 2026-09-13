@@ -7,15 +7,19 @@ import com.pigapl.warengine.network.AdminTeamDetail;
 import com.pigapl.warengine.network.ClientboundAdminKitsSnapshotPayload;
 import com.pigapl.warengine.network.ClientboundAdminTeamsSnapshotPayload;
 import com.pigapl.warengine.network.ServerboundAdminClearTeamBasePayload;
+import com.pigapl.warengine.network.ServerboundAdminAdjustBaseRadiusPayload;
 import com.pigapl.warengine.network.ServerboundAdminDeleteTeamPayload;
 import com.pigapl.warengine.network.ServerboundAdminForceKitPayload;
 import com.pigapl.warengine.network.ServerboundAdminForceResupplyPayload;
 import com.pigapl.warengine.network.ServerboundAdminKickSquadMemberPayload;
+import com.pigapl.warengine.network.ServerboundAdminMoveToSquadPayload;
 import com.pigapl.warengine.network.ServerboundAdminMoveToTeamPayload;
 import com.pigapl.warengine.network.ServerboundAdminRestoreTeamsPayload;
 import com.pigapl.warengine.network.ServerboundAdminSetTeamBasePayload;
 import com.pigapl.warengine.network.ServerboundAdminSendToBasePayload;
 import com.pigapl.warengine.network.ServerboundAdminTeleportToPlayerPayload;
+import com.pigapl.warengine.network.ServerboundAdminToggleExemptPayload;
+import com.pigapl.warengine.network.ServerboundAdminToggleRolePayload;
 import net.minecraft.client.gui.components.Tooltip;
 import com.pigapl.warengine.network.ServerboundAdminTeleportToTeamBasePayload;
 import com.pigapl.warengine.network.ServerboundAdminUpsertTeamPayload;
@@ -38,6 +42,13 @@ public final class AdminTeamsScreen extends Screen {
 
     private static final int POLL_INTERVAL_TICKS = 20;
     private static final int ROW_HEIGHT = 14;
+
+    // One action set for a player, identical in both panels. Widths are fixed so the columns line up
+    // between Teams and Squads - an admin learns the row once. Keep these three arrays in step.
+    private static final String[] ACTIONS =
+            {"TP", "Home", "Team", "Sqd", "Kit", "Sup", "Ex", "Cmd", "Ldr", "Kick"};
+    private static final int[] ACTION_WIDTHS = {20, 34, 34, 30, 22, 26, 22, 28, 24, 30};
+    private static final int ACTION_GAP = 2;
     private static final String[] COLOR_CYCLE = {
             "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", "gold", "gray",
             "dark_gray", "blue", "green", "aqua", "red", "light_purple", "yellow", "white"
@@ -126,6 +137,21 @@ public final class AdminTeamsScreen extends Screen {
                         .bounds(bx + 62, y - 1, 26, ROW_HEIGHT - 2).build();
                 clearBase.active = !team.baseSummary().isEmpty();
                 addRenderableWidget(clearBase);
+                // Base size, 5 blocks a click. Greyed until the team has a base to size.
+                Button smaller = Button.builder(Component.literal("-"),
+                                b -> PacketDistributor.sendToServer(
+                                        new ServerboundAdminAdjustBaseRadiusPayload(team.team(), -5)))
+                        .tooltip(Tooltip.create(Component.literal("Base 5 blocks smaller")))
+                        .bounds(bx + 90, y - 1, 12, ROW_HEIGHT - 2).build();
+                smaller.active = !team.baseSummary().isEmpty();
+                addRenderableWidget(smaller);
+                Button bigger = Button.builder(Component.literal("+"),
+                                b -> PacketDistributor.sendToServer(
+                                        new ServerboundAdminAdjustBaseRadiusPayload(team.team(), 5)))
+                        .tooltip(Tooltip.create(Component.literal("Base 5 blocks bigger")))
+                        .bounds(bx + 104, y - 1, 12, ROW_HEIGHT - 2).build();
+                bigger.active = !team.baseSummary().isEmpty();
+                addRenderableWidget(bigger);
                 addRenderableWidget(Button.builder(Component.literal("Color"),
                                 b -> PacketDistributor.sendToServer(
                                         new ServerboundAdminUpsertTeamPayload(team.team(), nextColor(team.colorArgb()))))
@@ -134,16 +160,7 @@ public final class AdminTeamsScreen extends Screen {
                                 b -> PacketDistributor.sendToServer(new ServerboundAdminDeleteTeamPayload(team.team())))
                         .bounds(right - 44, y - 1, 44, ROW_HEIGHT - 2).build());
             } else {
-                addRenderableWidget(Button.builder(Component.literal("TP"),
-                                b -> PacketDistributor.sendToServer(new ServerboundAdminTeleportToPlayerPayload(member.uuid())))
-                        .bounds(teamMemberButtonsX(), y - 1, 24, ROW_HEIGHT - 2).build());
-                addRenderableWidget(Button.builder(Component.literal("Home"),
-                                b -> PacketDistributor.sendToServer(
-                                        new ServerboundAdminSendToBasePayload(member.uuid())))
-                        .tooltip(Tooltip.create(Component.literal("Send this player to their team's base")))
-                        .bounds(right - 84, y - 1, 36, ROW_HEIGHT - 2).build());
-                addRenderableWidget(Button.builder(Component.literal("Move"), b -> openTeamPicker(member, teams))
-                        .bounds(right - 46, y - 1, 46, ROW_HEIGHT - 2).build());
+                addPlayerRow(y, member, team.team(), teams, squads);
             }
         });
 
@@ -154,31 +171,105 @@ public final class AdminTeamsScreen extends Screen {
                         .bounds(squadHeaderButtonsX(), y - 1, 40, ROW_HEIGHT - 2).build());
                 return;
             }
-            int kickX = right - 32;
-            int supX = kickX - 2 - 26;
-            int kitX = supX - 2 - 26;
-            int tpX = squadMemberButtonsX();
-            addRenderableWidget(Button.builder(Component.literal("TP"),
-                            b -> PacketDistributor.sendToServer(new ServerboundAdminTeleportToPlayerPayload(member.uuid())))
-                    .bounds(tpX, y - 1, 20, ROW_HEIGHT - 2).build());
-            addRenderableWidget(Button.builder(Component.literal("Kit"), b -> openKitPicker(member))
-                    .bounds(kitX, y - 1, 26, ROW_HEIGHT - 2).build());
-            addRenderableWidget(Button.builder(Component.literal("Sup"),
-                            b -> PacketDistributor.sendToServer(new ServerboundAdminForceResupplyPayload(member.uuid())))
-                    .bounds(supX, y - 1, 26, ROW_HEIGHT - 2).build());
-            addRenderableWidget(Button.builder(Component.literal("Kick").withStyle(ChatFormatting.RED),
-                            b -> PacketDistributor.sendToServer(new ServerboundAdminKickSquadMemberPayload(member.uuid())))
-                    .bounds(kickX, y - 1, 32, ROW_HEIGHT - 2).build());
+            addPlayerRow(y, member, squad.team(), teams, squads);
         });
+    }
+
+    /**
+     * Every per-player action, in one order, in both panels. Offline players lose only the actions that
+     * need a body in the world; kick is off for anyone not in a squad.
+     */
+    private void addPlayerRow(int y, AdminPlayerInfo member, String teamId,
+                              List<AdminTeamDetail> teams, List<AdminSquadDetail> squads) {
+        boolean online = member.online();
+        Runnable[] actions = {
+                () -> PacketDistributor.sendToServer(new ServerboundAdminTeleportToPlayerPayload(member.uuid())),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminSendToBasePayload(member.uuid())),
+                () -> openTeamPicker(member, teams),
+                () -> openSquadPicker(member, teamId, squads),
+                () -> openKitPicker(member),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminForceResupplyPayload(member.uuid())),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminToggleExemptPayload(member.uuid())),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminToggleRolePayload(
+                        member.uuid(), ServerboundAdminToggleRolePayload.COMMANDER)),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminToggleRolePayload(
+                        member.uuid(), ServerboundAdminToggleRolePayload.LEADER)),
+                () -> PacketDistributor.sendToServer(new ServerboundAdminKickSquadMemberPayload(member.uuid()))
+        };
+        String[] tips = {
+                "Teleport YOU to this player",
+                "Send this player to their team's base",
+                "Move this player to another team",
+                "Move this player to another squad on their team",
+                "Give this player a kit, ignoring limits",
+                "Resupply this player now, no grace countdown",
+                member.exempt()
+                        ? "Admin mode ON - click to turn off. No base restrictions, no nags."
+                        : "Admin mode OFF - click to turn on, for an admin who is also playing.",
+                member.commander()
+                        ? "Commander ON - click to remove. Creates squads, appoints leaders, edits any "
+                                + "squad on this team."
+                        : "Commander OFF - click to appoint.",
+                member.leader()
+                        ? "Squad leader ON - click to remove. May found a squad and edit the one they lead."
+                        : "Squad leader OFF - click to appoint.",
+                "Remove this player from their squad"
+        };
+        boolean[] enabled = {online, online, true, true, true, online, true, online, online,
+                !member.squadId().isEmpty()};
+
+        int x = playerButtonsX();
+        for (int i = 0; i < ACTIONS.length; i++) {
+            Runnable action = actions[i];
+            Component label = Component.literal(ACTIONS[i]);
+            if ("Kick".equals(ACTIONS[i])) {
+                label = Component.literal(ACTIONS[i]).withStyle(ChatFormatting.RED);
+            } else if ("Ex".equals(ACTIONS[i]) && member.exempt()) {
+                label = Component.literal(ACTIONS[i]).withStyle(ChatFormatting.GREEN);
+            } else if ("Cmd".equals(ACTIONS[i]) && member.commander()) {
+                label = Component.literal(ACTIONS[i]).withStyle(ChatFormatting.GOLD);
+            } else if ("Ldr".equals(ACTIONS[i]) && member.leader()) {
+                label = Component.literal(ACTIONS[i]).withStyle(ChatFormatting.AQUA);
+            }
+            Button button = Button.builder(label, b -> action.run())
+                    .tooltip(Tooltip.create(Component.literal(tips[i])))
+                    .bounds(x, y - 1, ACTION_WIDTHS[i], ROW_HEIGHT - 2).build();
+            button.active = enabled[i];
+            addRenderableWidget(button);
+            x += ACTION_WIDTHS[i] + ACTION_GAP;
+        }
+    }
+
+    /** Where a player row's buttons begin - both panels clip their text to this. */
+    private int playerButtonsX() {
+        int total = -ACTION_GAP;
+        for (int w : ACTION_WIDTHS) {
+            total += w + ACTION_GAP;
+        }
+        return right - total;
+    }
+
+    private void openSquadPicker(AdminPlayerInfo member, String teamId, List<AdminSquadDetail> squads) {
+        List<AdminPickScreen.Entry> entries = new ArrayList<>();
+        for (AdminSquadDetail squad : squads) {
+            if (squad.team().equalsIgnoreCase(teamId)) {
+                entries.add(new AdminPickScreen.Entry(squad.id(),
+                        squad.name() + "  " + squad.members().size() + "/" + squad.limit()));
+            }
+        }
+        Minecraft.getInstance().setScreen(new AdminPickScreen("Move to Squad", entries,
+                squadId -> PacketDistributor.sendToServer(
+                        new ServerboundAdminMoveToSquadPayload(member.uuid(), squadId)),
+                this));
     }
 
     // Called from BOTH init() (placement) and the draw* methods (dotted-line end) - never disagree.
     private int teamHeaderButtonsX() {
-        return right - 90 - 2 - (36 + 2 + 22 + 2 + 26);
+        return right - 90 - 2 - (36 + 2 + 22 + 2 + 26 + 2 + 12 + 2 + 12);
     }
 
     private int teamMemberButtonsX() {
-        return right - 110;
+        return playerButtonsX();
     }
 
     private int squadHeaderButtonsX() {
@@ -186,10 +277,7 @@ public final class AdminTeamsScreen extends Screen {
     }
 
     private int squadMemberButtonsX() {
-        int kickX = right - 32;
-        int supX = kickX - 2 - 26;
-        int kitX = supX - 2 - 26;
-        return kitX - 2 - 20;
+        return playerButtonsX();
     }
 
     private void openTeamPicker(AdminPlayerInfo member, List<AdminTeamDetail> teams) {
@@ -316,8 +404,8 @@ public final class AdminTeamsScreen extends Screen {
                 String base = team.baseSummary().isEmpty() ? "no base" : "base " + team.baseSummary();
                 String full = team.displayName() + "  [" + team.team() + "]  -  " + team.members().size()
                         + " online  -  " + base;
-                // Clipped to where this row's buttons start - the header carries five of them
-                // (Base/B>/Clr/Color/Del), so a long team line would otherwise run underneath.
+                // Clipped to where this row's buttons start - the header carries seven of them
+                // (Base/B>/Clr/-/+/Color/Del), so a long team line would otherwise run underneath.
                 String text = font.plainSubstrByWidth(full, Math.max(20, teamHeaderButtonsX() - 4 - (left + 18)));
                 graphics.drawString(font, text, left + 18, y, 0xFFFFFFFF);
                 drawDottedLine(graphics, left + 18 + font.width(text), teamHeaderButtonsX(), y + 4, PickerLayout.HINT_COLOR);
@@ -333,7 +421,7 @@ public final class AdminTeamsScreen extends Screen {
 
     private void drawSquadsPanel(GuiGraphics graphics, List<AdminSquadDetail> squads) {
         drawPanel(graphics, left, squadsTop, right, squadsBottom,
-                "Squads (scroll to browse - TP / Kit / Sup / Kick per member)");
+                "Squads (scroll to browse)");
         if (squads.isEmpty()) {
             graphics.drawString(font, "(no squads yet)", left + 6, squadsTop + 16, PickerLayout.HINT_COLOR);
             return;

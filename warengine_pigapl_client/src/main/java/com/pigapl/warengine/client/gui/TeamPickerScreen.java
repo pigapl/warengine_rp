@@ -86,7 +86,7 @@ public final class TeamPickerScreen extends Screen {
 
     private void selectTeam(String teamId) {
         PacketDistributor.sendToServer(new ServerboundSelectTeamPayload(teamId));
-        onClose();
+        Minecraft.getInstance().setScreen(new SquadPickerScreen(true));
     }
 
     @Override
@@ -102,6 +102,7 @@ public final class TeamPickerScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
 
         graphics.drawCenteredString(font, title, width / 2, 20, PickerLayout.TITLE_COLOR);
+        PickerLayout.drawSteps(graphics, font, width, PickerLayout.STEP_TEAM);
 
         if (grid == null) {
             graphics.drawCenteredString(font,

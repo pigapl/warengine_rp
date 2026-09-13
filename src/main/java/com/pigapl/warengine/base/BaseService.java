@@ -1,5 +1,10 @@
 package com.pigapl.warengine.base;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import com.pigapl.warengine.WarConfig;
 import com.pigapl.warengine.state.WarState;
 import com.pigapl.warengine.team.TeamService;
@@ -34,13 +39,42 @@ public final class BaseService {
         return WarState.get(server).clearBase(team);
     }
 
+    public static final double MIN_RADIUS = 5.0;
+    public static final double MAX_RADIUS = 500.0;
+
+    /** The ONE place a base's size is decided: its own radius, else bases.kitRadius. */
+    public static double radiusOf(WarState.TeamBase base) {
+        return base.radius > 0.0 ? base.radius : WarConfig.BASE_KIT_RADIUS.get();
+    }
+
+    /** For messages: the size of this team's base, or the default when it has none. */
+    public static double radiusFor(MinecraftServer server, String team) {
+        WarState.TeamBase base = of(server, team);
+        return base == null ? WarConfig.BASE_KIT_RADIUS.get() : radiusOf(base);
+    }
+
+    /** Returns the new radius, or -1 if the team has no base to size. */
+    public static double adjustRadius(MinecraftServer server, String team, int delta) {
+        WarState.TeamBase base = of(server, team);
+        if (base == null) {
+            return -1.0;
+        }
+        double next = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radiusOf(base) + delta));
+        WarState.get(server).setBaseRadius(team, next);
+        return next;
+    }
+
     /** True when the team has no base or the radius is 0 - the restriction is opt-in. */
     public static boolean withinKitRange(ServerPlayer player, String team) {
+        // An exempt admin is never out of range: they are running the event from wherever they are.
+        if (WarState.get(player.server).isExempt(player.getUUID())) {
+            return true;
+        }
         WarState.TeamBase base = of(player.server, team);
         if (base == null) {
             return true;
         }
-        double radius = WarConfig.BASE_KIT_RADIUS.get();
+        double radius = radiusOf(base);
         if (radius <= 0.0) {
             return true;
         }
@@ -70,6 +104,52 @@ public final class BaseService {
     public static boolean teleportToOwnBase(ServerPlayer player) {
         WarState.TeamBase base = of(player.server, TeamService.getTeam(player.server, player));
         return base != null && teleportTo(player, base);
+    }
+
+    private static final Map<UUID, Integer> OUT_OF_BASE = new HashMap<>();
+
+    /**
+     * Pre-war base lock, an admin toggle that is off by default. Once a second, anyone outside
+     * their base's radius (see radiusOf) gets a countdown on the action bar, then is teleported home. Countdown rather
+     * than push-back: pushing does nothing to a player standing on a Sable ship.
+     * Skipped: during a war, admin-mode (exempt) players, spectators, and teams with no base.
+     */
+    public static void keepInBaseTick(MinecraftServer server) {
+        if (server.getTickCount() % 20 != 0) {
+            return;
+        }
+        WarState st = WarState.get(server);
+        if (!st.keepInBase() || st.roundActive()) {
+            OUT_OF_BASE.clear();
+            return;
+        }
+        int grace = WarConfig.BASE_KEEP_GRACE_SECONDS.get();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            UUID id = player.getUUID();
+            String team = TeamService.getTeam(server, player);
+            WarState.TeamBase base = team == null ? null : of(server, team);
+            if (base == null || st.isExempt(id) || player.isSpectator()) {
+                OUT_OF_BASE.remove(id);
+                continue;
+            }
+            double radius = radiusOf(base);
+            double dist = distanceTo(player, team);   // -1 = other dimension, which is certainly out
+            if (radius <= 0.0 || (dist >= 0.0 && dist <= radius)) {
+                OUT_OF_BASE.remove(id);
+                continue;
+            }
+            int left = OUT_OF_BASE.getOrDefault(id, grace + 1) - 1;
+            if (left <= 0) {
+                OUT_OF_BASE.remove(id);
+                player.stopRiding();
+                teleportTo(player, base);
+                continue;
+            }
+            OUT_OF_BASE.put(id, left);
+            // One word and a number - most players here do not read English.
+            player.displayClientMessage(Component.literal("BASE " + left)
+                    .withStyle(ChatFormatting.RED, ChatFormatting.BOLD), true);
+        }
     }
 
     /** Players with no team, or a team with no base, stay where they are. */

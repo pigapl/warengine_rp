@@ -38,6 +38,19 @@ public final class ClientKitCache {
         revision++;
     }
 
+    private static volatile boolean pickerReopen;
+
+    static void requestPickerReopen() {
+        pickerReopen = true;
+    }
+
+    /** One-shot, same as the confirm below: the tick loop opens the picker, then it's gone. */
+    public static boolean consumePickerReopen() {
+        boolean value = pickerReopen;
+        pickerReopen = false;
+        return value;
+    }
+
     public record PendingConfirm(String kitId, List<String> lines) {}
 
     private static volatile PendingConfirm pendingConfirm;

@@ -20,12 +20,27 @@ public final class KitPickerScreen extends Screen {
 
     private static final int ACCENT = 0xFF5AC46A;
     private static final int ACCENT_FULL = 0xFFC45A5A;
+    private static final int ACCENT_LOCKED = 0xFF6A6A78;   // your squad reserved none of it
 
     private PickerLayout.Grid grid;
     private int lastSeenRevision = -1;
 
+    /** Opened straight after a squad pick: the cached catalog is still the OLD squad's for a few ticks. */
+    private final boolean awaitRefresh;
+    private final int openedAtRevision;
+
     public KitPickerScreen() {
+        this(false);
+    }
+
+    public KitPickerScreen(boolean awaitRefresh) {
         super(Component.literal("Pick your Kit"));
+        this.awaitRefresh = awaitRefresh;
+        this.openedAtRevision = ClientKitCache.revision();
+    }
+
+    private boolean waiting() {
+        return awaitRefresh && ClientKitCache.revision() == openedAtRevision;
     }
 
     /** Rebuilds on a server push, or a kit whose last slot just went keeps rendering as clickable. */
@@ -41,7 +56,7 @@ public final class KitPickerScreen extends Screen {
         lastSeenRevision = ClientKitCache.revision();
         List<KitCatalogEntry> kits = ClientKitCache.catalog();
         addChangeSquadButton();
-        if (kits.isEmpty()) {
+        if (waiting() || kits.isEmpty()) {
             grid = null;
             return;
         }
@@ -52,14 +67,15 @@ public final class KitPickerScreen extends Screen {
         for (int i = 0; i < kits.size(); i++) {
             KitCatalogEntry kit = kits.get(i);
             boolean isCurrent = kit.id().equals(currentKit);
-            boolean full = kit.availability().full() && !isCurrent;
+            boolean locked = !kit.availability().offered() && !isCurrent;
+            boolean full = (locked || kit.availability().full()) && !isCurrent;
 
             SelectionCardWidget card = new SelectionCardWidget(
                     grid.xFor(i), grid.yFor(i), grid.cardWidth(), grid.cardHeight(),
                     Component.literal(kit.displayName()),
                     slotLabel(kit, isCurrent),
                     kit.icon(),
-                    full ? ACCENT_FULL : ACCENT,
+                    locked ? ACCENT_LOCKED : (full ? ACCENT_FULL : ACCENT),
                     isCurrent,
                     () -> selectKit(kit.id()));
             card.active = !full;
@@ -72,6 +88,9 @@ public final class KitPickerScreen extends Screen {
         if (isCurrent) {
             return Component.literal("equipped");
         }
+        if (!kit.availability().offered()) {
+            return Component.literal("not reserved");
+        }
         if (kit.availability().unlimited()) {
             return Component.literal("open");
         }
@@ -80,6 +99,17 @@ public final class KitPickerScreen extends Screen {
 
     private static Component describe(KitCatalogEntry kit) {
         List<String> lines = new ArrayList<>();
+        if (!kit.availability().offered()) {
+            lines.add("Not reserved by your squad");
+            lines.add("");
+        }
+        if (!kit.availability().scarceNames().isEmpty()) {
+            lines.add("Round start only:");
+            for (String name : kit.availability().scarceNames()) {
+                lines.add("  " + name);
+            }
+            lines.add("");
+        }
         if (!kit.description().isEmpty()) {
             lines.add(kit.description());
             lines.add("");
@@ -134,10 +164,12 @@ public final class KitPickerScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
 
         graphics.drawCenteredString(font, title, width / 2, 20, PickerLayout.TITLE_COLOR);
+        PickerLayout.drawSteps(graphics, font, width, PickerLayout.STEP_KIT);
 
         if (grid == null) {
             graphics.drawCenteredString(font,
-                    Component.literal("No kits available for your team yet - ask an admin.")
+                    Component.literal(waiting() ? "Loading kits..."
+                                    : "No kits available for your team yet - ask an admin.")
                             .withStyle(ChatFormatting.GRAY),
                     width / 2, height / 2, PickerLayout.HINT_COLOR);
             return;

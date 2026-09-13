@@ -109,8 +109,9 @@ public final class KitService {
         if (squad != null && TeamKits.budgetFor(squad.team, norm) > 0) {
             return squad.kitReservations.getOrDefault(norm, 0);
         }
-        int flat = kit.limitOrUnlimited();
-        return flat <= 0 ? -1 : flat;
+        // Budgets are the ONLY cap now (user, 2026-09-12): "no need for limiting kits, we just need to
+        // budget them". A kit with no team budget is unlimited, whatever its old JSON "limit" says.
+        return -1;
     }
 
     public static int unreservedBudget(MinecraftServer server, String team, String kitId) {
@@ -225,6 +226,33 @@ public final class KitService {
                     + " - scarce weapons are only handed out at round start.");
         }
         return lines;
+    }
+
+    /** Every rationed item in this kit, named. Drives the picker tooltip and the respawn note. */
+    public static List<String> scarceLabelsOf(KitDefinition kit) {
+        List<ItemStack> wanted = new ArrayList<>(kit.armor());
+        wanted.add(kit.offhand());
+        wanted.addAll(merge(kit.inventory()));
+        return scarceLabels(wanted);
+    }
+
+    /**
+     * Rationed items from the kit that the player is short of right now. Empty when they still hold
+     * everything - nobody needs telling about ammo they have.
+     */
+    public static List<String> missingScarce(ServerPlayer player, KitDefinition kit) {
+        List<String> out = new ArrayList<>();
+        Inventory inv = player.getInventory();
+        List<ItemStack> wanted = new ArrayList<>(kit.armor());
+        wanted.add(kit.offhand());
+        wanted.addAll(merge(kit.inventory()));
+        for (ItemStack want : wanted) {
+            if (!want.isEmpty() && ScarceItems.isScarce(want)
+                    && countEverywhere(inv, want) < want.getCount()) {
+                out.add(label(want));
+            }
+        }
+        return out;
     }
 
     private static List<String> scarceLabels(List<ItemStack> stacks) {
@@ -354,7 +382,7 @@ public final class KitService {
                 for (ServerPlayer l : losers) {
                     stripKitItems(l, kit);
                     state.clearKit(l.getUUID());
-                    KitNetworking.sendKitState(l);
+                    KitNetworking.sendKitState(l, true);
                     l.displayClientMessage(Component.literal("Your squad had more '" + kit.displayNameOr(kitId)
                             + "' than it is allowed (" + cap + "). The earliest picks kept it, so you were "
                             + "taken off it - pick another kit.").withStyle(ChatFormatting.RED), false);

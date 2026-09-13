@@ -93,6 +93,7 @@ public final class RoundService {
                 5, 60, 20);
         broadcast(server, Component.literal("The war has begun. " + ticketSummary(st))
                 .withStyle(ChatFormatting.GOLD));
+        explainCapture(server, st);
         playEverywhere(server, SoundEvents.WITHER_SPAWN, 0.6f, 1.2f);
         broadcastPoints(server, st, true);
     }
@@ -145,6 +146,63 @@ public final class RoundService {
         if (st.hasPoints() && tick % 10L == 0L) {
             for (CapturePoint point : st.points()) {
                 drawPoint(server, point);
+            }
+        }
+        // Pre-war only: once the war is on, a ring across the base is just clutter in the fight.
+        if (tick % 10L == 0L && !st.roundActive()) {
+            drawBases(server, st);
+        }
+    }
+
+    /**
+     * Each team's base as the capture-point ring WITHOUT the centre pillar - a base is an area to stay
+     * in, not a spot to stand on. Members see only their own base; admins see every base, so they can
+     * see what they are resizing.
+     */
+    private static void drawBases(MinecraftServer server, WarState st) {
+        for (String team : TeamService.ids(server)) {
+            WarState.TeamBase base = st.getBase(team);
+            if (base == null) {
+                continue;
+            }
+            double r = com.pigapl.warengine.base.BaseService.radiusOf(base);
+            ServerLevel level = com.pigapl.warengine.base.BaseService.levelOf(server, base);
+            if (r <= 0.0 || level == null) {
+                continue;
+            }
+            List<ServerPlayer> viewers = new ArrayList<>();
+            for (ServerPlayer p : level.players()) {
+                if (team.equalsIgnoreCase(TeamService.getTeam(server, p)) || p.hasPermissions(2)) {
+                    viewers.add(p);
+                }
+            }
+            if (viewers.isEmpty()) {
+                continue;
+            }
+
+            DustParticleOptions dust = dust(TeamService.colorOf(server, team, NEUTRAL_RGB), 1.4f);
+            // A base ring is far longer than a point's, so it gets more points before thinning out.
+            int steps = Math.max(24, Math.min(96, (int) Math.round(r * 2.0)));
+            int aroundY = Mth.floor(base.y);
+            double[] ringX = new double[steps];
+            double[] ringY = new double[steps];
+            double[] ringZ = new double[steps];
+            for (int i = 0; i < steps; i++) {
+                double a = (Math.PI * 2.0 * i) / steps;
+                ringX[i] = base.x + Math.cos(a) * r;
+                ringZ[i] = base.z + Math.sin(a) * r;
+                ringY[i] = groundY(level, Mth.floor(ringX[i]), Mth.floor(ringZ[i]), aroundY);
+            }
+            for (ServerPlayer viewer : viewers) {
+                // Fade by distance to the EDGE, not the centre - a player is usually standing inside.
+                double edge = Math.abs(Math.sqrt(viewer.distanceToSqr(base.x, viewer.getY(), base.z)) - r);
+                if (edge > MARKER_RANGE) {
+                    continue;
+                }
+                int stride = edge <= RING_FULL_DISTANCE ? 1 : edge <= RING_SPARSE_DISTANCE ? 2 : 4;
+                for (int i = 0; i < steps; i += stride) {
+                    level.sendParticles(viewer, dust, true, ringX[i], ringY[i], ringZ[i], 1, 0.0, 0.0, 0.0, 0.0);
+                }
             }
         }
     }
@@ -238,6 +296,23 @@ public final class RoundService {
         return id == null ? null : server.getLevel(ResourceKey.create(Registries.DIMENSION, id));
     }
 
+
+    /**
+     * The one rule nobody knew at event 1 ("how do you capture points?"), in one line. Everything else
+     * about a point - who holds it, capture progress, the score target - the HUD already shows, and
+     * most players here do not read English, so prose is worse than useless.
+     */
+    private static void explainCapture(MinecraftServer server, WarState st) {
+        if (st.points().isEmpty()) {
+            return;
+        }
+        List<String> ids = new ArrayList<>();
+        for (CapturePoint p : st.points()) {
+            ids.add(p.id);
+        }
+        broadcast(server, Component.literal("Points: " + String.join(", ", ids) + " - stand inside to capture")
+                .withStyle(ChatFormatting.AQUA));
+    }
 
     public static void broadcastPoints(MinecraftServer server, WarState st, boolean force) {
         ClientboundCapturePointsPayload payload = buildPointsPayload(server, st);

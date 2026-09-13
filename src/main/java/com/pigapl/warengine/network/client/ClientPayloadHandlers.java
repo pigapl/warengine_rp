@@ -24,6 +24,9 @@ public final class ClientPayloadHandlers {
 
     public static void handleKitState(ClientboundKitStatePayload payload, IPayloadContext context) {
         ClientKitCache.setKitId(payload.kitId());
+        if (payload.reopenPicker()) {
+            ClientKitCache.requestPickerReopen();
+        }
     }
 
     public static void handleKitConfirm(ClientboundKitConfirmPayload payload, IPayloadContext context) {
@@ -35,7 +38,7 @@ public final class ClientPayloadHandlers {
     }
 
     public static void handleSquadState(ClientboundSquadStatePayload payload, IPayloadContext context) {
-        ClientSquadCache.setSquadId(payload.squadId());
+        ClientSquadCache.setSquadId(payload.squadId(), payload.canCreate(), payload.commander());
     }
 
     public static void handleKitBudget(ClientboundKitBudgetPayload payload, IPayloadContext context) {

@@ -5,6 +5,7 @@ import com.pigapl.warengine.command.KitCommand;
 import com.pigapl.warengine.command.SquadCommand;
 import com.pigapl.warengine.command.WarCommand;
 import com.pigapl.warengine.command.WarStateCommand;
+import com.pigapl.warengine.kit.KitDefinition;
 import com.pigapl.warengine.kit.KitStorage;
 import com.pigapl.warengine.kit.ScarceItems;
 import com.pigapl.warengine.kit.TeamKits;
@@ -16,6 +17,7 @@ import com.pigapl.warengine.state.WarState;
 import com.pigapl.warengine.team.TeamService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
@@ -64,6 +66,7 @@ public final class GameEvents {
         onTeamNagTick(event.getServer());
         onTeamLoginNagTick(event.getServer());
         onTeamChangeTick(event.getServer());
+        com.pigapl.warengine.base.BaseService.keepInBaseTick(event.getServer());
     }
 
     @SubscribeEvent
@@ -95,8 +98,11 @@ public final class GameEvents {
             // Vacate BEFORE touching kit state: limits are squad-scoped, so a stale squad assignment
             // would make the catalog resend below count against the wrong roster.
             String vacatedSquad = SquadService.leave(player);
+            // Unconditional: commander/leader are stamped with a team, so changing side changes what
+            // this player may do even when they were in no squad to vacate. Skipping the push here left
+            // a stale "you may create a squad" on the client of anyone who switched teams squadless.
+            SquadNetworking.sendSquadState(player);
             if (vacatedSquad != null) {
-                SquadNetworking.sendSquadState(player);
                 WarEngine.LOGGER.info("[squad] {} moved teams, left squad '{}'",
                         player.getGameProfile().getName(), vacatedSquad);
             }
@@ -160,8 +166,7 @@ public final class GameEvents {
             player.connection.send(new ClientboundSetTitleTextPacket(
                     Component.literal("PICK A TEAM").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
             player.connection.send(new ClientboundSetSubtitleTextPacket(
-                    Component.literal("/team join <" + String.join("|", teamIds) + ">")
-                            .withStyle(ChatFormatting.YELLOW)));
+                    openMenuHint().withStyle(ChatFormatting.YELLOW)));
         }
     }
 
@@ -178,13 +183,25 @@ public final class GameEvents {
         if (teamIds.isEmpty()) {
             return;
         }
+        WarState nagState = WarState.get(server);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (TeamService.getTeam(server, player) == null) {
-                player.displayClientMessage(Component.literal(
-                        "Pick a team: /team join <" + String.join("|", teamIds) + ">")
+            if (TeamService.getTeam(server, player) == null && !nagState.isExempt(player.getUUID())) {
+                player.displayClientMessage(Component.literal("Pick a team  ")
+                        .append(openMenuHint())
                         .withStyle(ChatFormatting.YELLOW), true);
             }
         }
+    }
+
+    /**
+     * Just the key, in brackets. Resolves to whatever the reader actually bound, so a rebind never makes
+     * us lie; the id is the CLIENT addon's mapping - keep it in step with KeyBindings.OPEN_MENU.
+     * Deliberately wordless: most players here do not read English.
+     */
+    private static MutableComponent openMenuHint() {
+        return Component.literal("[")
+                .append(Component.keybind("key.warengine_pigapl_client.menu"))
+                .append("]");
     }
 
     @SubscribeEvent
@@ -259,8 +276,28 @@ public final class GameEvents {
             return;
         }
         KitStorage.get(kitId).ifPresentOrElse(
-                kit -> com.pigapl.warengine.kit.KitService.reconcile(player, kit),
+                kit -> {
+                    com.pigapl.warengine.kit.KitService.reconcile(player, kit);
+                    explainMissingScarce(player, kit);
+                },
                 () -> WarEngine.LOGGER.warn("Player {} is assigned kit '{}' which no longer exists",
                         player.getGameProfile().getName(), kitId));
+    }
+
+    /**
+     * "Many players had no ammo" after event 1 was this, working as designed and never explained: a
+     * respawn tops up normal ammo but never rationed gear. Said only when they are actually short, and
+     * in the same four words the kit picker uses - most players here do not read English.
+     */
+    private static void explainMissingScarce(ServerPlayer player, KitDefinition kit) {
+        if (!WarState.get(player.server).roundActive()) {
+            return;
+        }
+        List<String> missing = com.pigapl.warengine.kit.KitService.missingScarce(player, kit);
+        if (missing.isEmpty()) {
+            return;
+        }
+        player.displayClientMessage(Component.literal("Round start only: " + String.join(", ", missing))
+                .withStyle(ChatFormatting.YELLOW), false);
     }
 }

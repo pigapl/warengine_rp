@@ -33,8 +33,8 @@ public final class KitNetworking {
     private KitNetworking() {}
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        // "2": select_kit gained a field. A stale client is refused at login instead of on its first pick.
-        PayloadRegistrar registrar = event.registrar("2");
+        // "3": kit_state gained a field. A stale client is refused at login instead of on its first pick.
+        PayloadRegistrar registrar = event.registrar("3");
 
         registrar.playToServer(ServerboundSelectTeamPayload.TYPE, ServerboundSelectTeamPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSelectTeam(payload, context)));
@@ -117,7 +117,8 @@ public final class KitNetworking {
         // TOO_FAR_FROM_BASE, where every kit refuses until the player walks back to base.
         Component reason = switch (result) {
             case TOO_FAR_FROM_BASE -> Component.literal("Too far from your team's base to change kit - get within "
-                    + Math.round(WarConfig.BASE_KIT_RADIUS.get()) + " blocks of it.");
+                    + Math.round(com.pigapl.warengine.base.BaseService.radiusFor(
+                            player.server, TeamService.getTeam(player.server, player))) + " blocks of it.");
             case LIMIT_REACHED -> Component.literal("That kit is full in your squad.");
             case NOT_RESERVED -> Component.literal("Your squad has none of that kit reserved.");
             case NOT_ALLOWED -> Component.literal("Your team cannot use that kit.");
@@ -160,7 +161,13 @@ public final class KitNetworking {
         sendCatalogFor(player, null);
     }
 
-    /** Empty with no team OR no squad - squad gates the kit step, so a stale picker never shows. */
+    /**
+     * Empty with no team OR no squad - squad gates the kit step, so a stale picker never shows.
+     *
+     * <p>A kit the squad has no reservation for is sent with {@code offered = false} rather than
+     * dropped: at event 1 the budgeted sniper/LMG simply vanished from the menu and players read that
+     * as the mod being broken. The pick itself is still refused server-side.</p>
+     */
     public static void sendCatalogFor(ServerPlayer player, UUID excludeFromCounts) {
         String team = TeamService.getTeam(player.server, player);
         String squad = team == null ? null
@@ -168,16 +175,16 @@ public final class KitNetworking {
         List<KitCatalogEntry> entries = new ArrayList<>();
         if (team != null && squad != null) {
             for (String id : TeamKits.kitsFor(team)) {
-                if (!KitService.kitOfferedToSquad(player.server, squad, id)) {
-                    continue;
-                }
+                boolean offered = KitService.kitOfferedToSquad(player.server, squad, id);
                 KitStorage.get(id).ifPresent(kit -> {
-                    int cap = KitService.squadKitLimit(player.server, squad, id, kit);
+                    int cap = offered ? KitService.squadKitLimit(player.server, squad, id, kit) : 0;
+                    int taken = offered
+                            ? KitService.countUsing(player.server, squad, id, excludeFromCounts) : 0;
                     entries.add(new KitCatalogEntry(
                             id, kit.displayNameOr(id), kit.iconOrGuess(), kit.description().orElse(""),
                             new KitLoadout(kit.armor(), kit.offhand(), kit.inventory()),
-                            new KitAvailability(cap < 0 ? 0 : cap,
-                                    KitService.countUsing(player.server, squad, id, excludeFromCounts))));
+                            new KitAvailability(cap < 0 ? 0 : cap, taken, offered,
+                                    KitService.scarceLabelsOf(kit))));
                 });
             }
         }
@@ -185,8 +192,14 @@ public final class KitNetworking {
     }
 
     public static void sendKitState(ServerPlayer player) {
+        sendKitState(player, false);
+    }
+
+    /** {@code reopenPicker} only for a kit taken away from the player - see the payload. */
+    public static void sendKitState(ServerPlayer player, boolean reopenPicker) {
         String kitId = WarState.get(player.server).getKit(player.getUUID());
-        PacketDistributor.sendToPlayer(player, new ClientboundKitStatePayload(kitId == null ? "" : kitId));
+        PacketDistributor.sendToPlayer(player,
+                new ClientboundKitStatePayload(kitId == null ? "" : kitId, reopenPicker));
     }
 
     public static void sendKitBudgetFor(ServerPlayer player) {

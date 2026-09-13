@@ -46,15 +46,48 @@ public final class ScarceItems {
     }
 
     public static boolean isScarce(ItemStack stack) {
-        if (stack.isEmpty() || ITEMS.isEmpty()) {
+        return matchesAny(ITEMS, stack);
+    }
+
+    /**
+     * The scarce-matching rule against an arbitrary list. Public so the admin client can pre-tick the
+     * bulk screen from a snapshot - the rule must not be reimplemented there and drift.
+     */
+    public static boolean matchesAny(List<ItemStack> list, ItemStack stack) {
+        if (stack.isEmpty() || list.isEmpty()) {
             return false;
         }
-        for (ItemStack scarce : ITEMS) {
+        for (ItemStack scarce : list) {
             if (KitService.sameForReconcile(scarce, stack)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** Applies a whole bulk edit with ONE file write - add/remove each save, which is 30+ writes here. */
+    public static int applyBulk(List<ItemStack> scarce, List<ItemStack> notScarce, MinecraftServer server)
+            throws IOException {
+        int changed = 0;
+        for (ItemStack stack : notScarce) {
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (ITEMS.removeIf(item -> KitService.sameForReconcile(item, stack))) {
+                changed++;
+            }
+        }
+        for (ItemStack stack : scarce) {
+            if (stack.isEmpty() || isScarce(stack)) {
+                continue;
+            }
+            ITEMS.add(KitService.identity(stack));
+            changed++;
+        }
+        if (changed > 0) {
+            save(server);
+        }
+        return changed;
     }
 
     public static boolean add(ItemStack held, MinecraftServer server) throws IOException {

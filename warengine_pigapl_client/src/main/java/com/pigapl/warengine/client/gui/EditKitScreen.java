@@ -24,7 +24,7 @@ public final class EditKitScreen extends Screen {
 
     private final String kitId;
     private EditBox nameBox;
-    private EditBox limitBox;
+    // No limit field: caps are team budgets + squad reservations, set on the Kit Budgets screen.
     private int pollTicks = 0;
     private int lastSeenRevision = -1;
     private Component status = null;
@@ -62,18 +62,12 @@ public final class EditKitScreen extends Screen {
         addRenderableWidget(nameBox);
         setInitialFocus(nameBox);
 
-        limitBox = new EditBox(font, centerX - FIELD_WIDTH / 2, top + 24, FIELD_WIDTH, 20, Component.literal("Limit"));
-        limitBox.setMaxLength(4);
-        limitBox.setFilter(s -> s.isEmpty() || s.chars().allMatch(Character::isDigit));
-        limitBox.setValue(kit == null ? "0" : Integer.toString(kit.limit()));
-        addRenderableWidget(limitBox);
-
         int buttonWidth = 90;
         addRenderableWidget(Button.builder(Component.literal("Save"), b -> save())
-                .bounds(centerX - buttonWidth - 4, top + 50, buttonWidth, 20).build());
+                .bounds(centerX - buttonWidth - 4, top + 26, buttonWidth, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Back"),
                         b -> Minecraft.getInstance().setScreen(new AdminKitsScreen()))
-                .bounds(centerX + 4, top + 50, buttonWidth, 20).build());
+                .bounds(centerX + 4, top + 26, buttonWidth, 20).build());
 
         ClientboundAdminKitsSnapshotPayload snap = ClientAdminCache.kitsSnapshot();
         List<String> teamIds = snap == null ? List.of() : snap.teamIds();
@@ -97,13 +91,7 @@ public final class EditKitScreen extends Screen {
     }
 
     private void save() {
-        int limit;
-        try {
-            limit = Integer.parseInt(limitBox.getValue().trim());
-        } catch (NumberFormatException e) {
-            limit = 0;
-        }
-        PacketDistributor.sendToServer(new ServerboundAdminUpdateKitPayload(kitId, nameBox.getValue().trim(), limit));
+        PacketDistributor.sendToServer(new ServerboundAdminUpdateKitPayload(kitId, nameBox.getValue().trim()));
         status = Component.literal("Saved.").withStyle(ChatFormatting.GREEN);
     }
 
@@ -116,20 +104,13 @@ public final class EditKitScreen extends Screen {
         if (lastSeenRevision != ClientAdminCache.revision()) {
             // The ~1/s poll rebuild recreates every widget and would wipe mid-typed text.
             String typedName = nameBox == null ? "" : nameBox.getValue();
-            String typedLimit = limitBox == null ? "" : limitBox.getValue();
             boolean nameFocused = nameBox != null && nameBox.isFocused();
-            boolean limitFocused = limitBox != null && limitBox.isFocused();
             rebuildWidgets();
             if (nameBox != null) {
                 nameBox.setValue(typedName);
-            }
-            if (limitBox != null) {
-                limitBox.setValue(typedLimit);
-            }
-            if (nameFocused && nameBox != null) {
-                setFocused(nameBox);
-            } else if (limitFocused && limitBox != null) {
-                setFocused(limitBox);
+                if (nameFocused) {
+                    setFocused(nameBox);
+                }
             }
         }
     }

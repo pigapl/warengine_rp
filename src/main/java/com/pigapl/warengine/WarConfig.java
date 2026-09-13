@@ -78,12 +78,17 @@ public final class WarConfig {
                      "so an abandoned capture drains faster than it filled. 0 = progress never decays.")
             .defineInRange("round.captureDecayPerSecond", 2, 0, 1000);
 
+    // Key kept as "kitRadius" so existing server configs keep their value - it now sizes the whole base.
     public static final ModConfigSpec.DoubleValue BASE_KIT_RADIUS = B
-            .comment("How close to their own team's base a player must be to pick or change a kit.",
+            .comment("Default base size in blocks: where a kit may be picked AND how far the base lock lets a",
+                     "player go. Each base can override it in the admin panel (Teams & Squads, - / +).",
                      "Set a base from the admin panel (Teams & Squads -> Base) or /warstate base set <team>.",
-                     "A team with no base set is never restricted, so this does nothing until bases exist.",
-                     "0 = no distance restriction at all.")
+                     "A team with no base set is never restricted. 0 = no restriction for bases on the default.")
             .defineInRange("bases.kitRadius", 40.0, 0.0, 1000.0);
+
+    public static final ModConfigSpec.IntValue BASE_KEEP_GRACE_SECONDS = B
+            .comment("Base lock: seconds of countdown outside the radius before the player is teleported back.")
+            .defineInRange("bases.keepGraceSeconds", 5, 1, 60);
 
     public static final ModConfigSpec SPEC = B.build();
 

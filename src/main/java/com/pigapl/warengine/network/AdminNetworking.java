@@ -50,7 +50,8 @@ public final class AdminNetworking {
     private AdminNetworking() {}
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        // "2": admin player rows gained squadId, so both panels can offer the same actions.
+        PayloadRegistrar registrar = event.registrar("2");
 
         registrar.playToServer(ServerboundRequestAdminSnapshotPayload.TYPE,
                 ServerboundRequestAdminSnapshotPayload.STREAM_CODEC,
@@ -91,6 +92,9 @@ public final class AdminNetworking {
 
         registrar.playToServer(ServerboundAdminSetTeamBasePayload.TYPE, ServerboundAdminSetTeamBasePayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSetTeamBase(payload, context)));
+        registrar.playToServer(ServerboundAdminAdjustBaseRadiusPayload.TYPE,
+                ServerboundAdminAdjustBaseRadiusPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleAdjustBaseRadius(payload, context)));
         registrar.playToServer(ServerboundAdminClearTeamBasePayload.TYPE,
                 ServerboundAdminClearTeamBasePayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleClearTeamBase(payload, context)));
@@ -133,6 +137,17 @@ public final class AdminNetworking {
                 (payload, context) -> context.enqueueWork(() -> handleMarkHeldScarce(context)));
         registrar.playToServer(ServerboundAdminUnmarkScarceAtPayload.TYPE, ServerboundAdminUnmarkScarceAtPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleUnmarkScarceAt(payload, context)));
+        registrar.playToServer(ServerboundAdminBulkScarcePayload.TYPE, ServerboundAdminBulkScarcePayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleBulkScarce(payload, context)));
+        registrar.playToServer(ServerboundAdminToggleExemptPayload.TYPE,
+                ServerboundAdminToggleExemptPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleToggleExempt(payload, context)));
+        registrar.playToServer(ServerboundAdminToggleKeepInBasePayload.TYPE,
+                ServerboundAdminToggleKeepInBasePayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleToggleKeepInBase(context)));
+        registrar.playToServer(ServerboundAdminToggleRolePayload.TYPE,
+                ServerboundAdminToggleRolePayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleToggleRole(payload, context)));
 
         // ---- outbound (S2C): must be registered on BOTH dists even on a dedicated server. The dist
         // guard goes inside the handler body, never around the registration. ----
@@ -416,6 +431,23 @@ public final class AdminNetworking {
         PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
     }
 
+    private static void handleAdjustBaseRadius(ServerboundAdminAdjustBaseRadiusPayload payload,
+                                               IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        MinecraftServer server = admin.server;
+        // Clamped here too - the panel sends 5, but a payload is just bytes.
+        int delta = Math.max(-50, Math.min(50, payload.delta()));
+        double next = BaseService.adjustRadius(server, payload.team(), delta);
+        if (next >= 0.0) {
+            WarEngine.LOGGER.info("[admin] {} set base size for '{}' to {}",
+                    admin.getGameProfile().getName(), payload.team(), Math.round(next));
+        }
+        PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
+    }
+
     private static void handleClearTeamBase(ServerboundAdminClearTeamBasePayload payload, IPayloadContext context) {
         ServerPlayer admin = opPlayerOrNull(context);
         if (admin == null) {
@@ -544,7 +576,7 @@ public final class AdminNetworking {
         MinecraftServer server = admin.server;
         String norm = KitStorage.normalizeId(payload.kitId());
         KitStorage.get(norm).ifPresent(kit -> {
-            KitDefinition updated = kit.withDisplayName(payload.displayName()).withLimit(payload.limit());
+            KitDefinition updated = kit.withDisplayName(payload.displayName());
             try {
                 KitStorage.save(norm, updated, server);
                 refreshCatalogsForKit(server, norm);
@@ -717,7 +749,7 @@ public final class AdminNetworking {
                     e.team == null ? "" : e.team, e.players));
         }
 
-        return new ClientboundAdminSnapshotPayload(st.roundActive(), timeLeft, WarConfig.ROUND_TICKET_CAP.get(),
+        return new ClientboundAdminSnapshotPayload(new AdminEventFlags(st.roundActive(), st.keepInBase()), timeLeft, WarConfig.ROUND_TICKET_CAP.get(),
                 teams, points, history);
     }
 
@@ -732,14 +764,19 @@ public final class AdminNetworking {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (team.equalsIgnoreCase(TeamService.getTeam(server, p))) {
                     String kitId = st.getKit(p.getUUID());
+                    String squadId = SquadService.getSquadId(server, p.getUUID());
                     members.add(new AdminPlayerInfo(p.getGameProfile().getName(), p.getUUID(), true,
-                            kitId == null ? "" : kitId, farFromBase(p, st)));
+                            kitId == null ? "" : kitId, farFromBase(p, st), squadId == null ? "" : squadId,
+                            st.isExempt(p.getUUID()),
+                            team.equalsIgnoreCase(orEmptyRole(st.getCommanderOf(p.getUUID()))),
+                            team.equalsIgnoreCase(orEmptyRole(st.getLeaderOf(p.getUUID())))));
                 }
             }
             String displayName = live == null ? team : live.getDisplayName().getString();
             WarState.TeamBase base = BaseService.of(server, team);
             teams.add(new AdminTeamDetail(team, accentFor(live), displayName, members,
-                    base == null ? "" : BaseService.describe(base)));
+                    base == null ? "" : BaseService.describe(base) + "  (" + Math.round(BaseService.radiusOf(base))
+                            + "m)"));
         }
 
         List<AdminSquadDetail> squads = new ArrayList<>();
@@ -749,7 +786,10 @@ public final class AdminNetworking {
                 ServerPlayer livePlayer = server.getPlayerList().getPlayer(id);
                 String kitId = st.getKit(id);
                 members.add(new AdminPlayerInfo(resolveName(server, id), id, livePlayer != null,
-                        kitId == null ? "" : kitId, farFromBase(livePlayer, st)));
+                        kitId == null ? "" : kitId, farFromBase(livePlayer, st), record.id,
+                        st.isExempt(id),
+                        record.team.equalsIgnoreCase(orEmptyRole(st.getCommanderOf(id))),
+                        record.team.equalsIgnoreCase(orEmptyRole(st.getLeaderOf(id)))));
             }
             squads.add(new AdminSquadDetail(record.id, record.team, record.name, record.limit, members));
         }
@@ -758,8 +798,13 @@ public final class AdminNetworking {
     }
 
     /** Pre-war only - mid-war everyone is out, so highlighting them all would just be noise. */
+    /** Roles are stored as the team they were granted for, so a null simply never matches a team id. */
+    private static String orEmptyRole(String team) {
+        return team == null ? "" : team;
+    }
+
     private static int farFromBase(ServerPlayer p, WarState st) {
-        if (p == null || st.roundActive()) {
+        if (p == null || st.roundActive() || st.isExempt(p.getUUID())) {
             return -1;
         }
         String team = TeamService.getTeam(p.server, p);
@@ -780,7 +825,8 @@ public final class AdminNetworking {
                         assigned.add(team);
                     }
                 });
-                kits.add(new AdminKitInfo(id, kit.displayNameOr(id), kit.iconOrGuess(), kit.limitOrUnlimited(), assigned));
+                // limit is vestigial - caps are team budgets + squad reservations. Field kept for the codec.
+                kits.add(new AdminKitInfo(id, kit.displayNameOr(id), kit.iconOrGuess(), 0, assigned));
             });
         }
         List<String> teamIds = new ArrayList<>();
@@ -790,7 +836,114 @@ public final class AdminNetworking {
     }
 
     public static ClientboundAdminScarceSnapshotPayload buildScarceSnapshot() {
-        return new ClientboundAdminScarceSnapshotPayload(List.copyOf(ScarceItems.all()));
+        List<ItemStack> kitItems = new ArrayList<>();
+        for (String id : KitStorage.ids()) {
+            KitStorage.get(id).ifPresent(kit -> {
+                addDistinct(kitItems, kit.armor());
+                addDistinct(kitItems, List.of(kit.offhand()));
+                addDistinct(kitItems, kit.inventory());
+            });
+        }
+        return new ClientboundAdminScarceSnapshotPayload(List.copyOf(ScarceItems.all()), kitItems);
+    }
+
+    /** One entry per distinct weapon, not per stack - a kit lists 3 mags of the same ammo. */
+    private static void addDistinct(List<ItemStack> out, List<ItemStack> candidates) {
+        for (ItemStack stack : candidates) {
+            if (!stack.isEmpty() && !ScarceItems.matchesAny(out, stack)) {
+                out.add(stack.copy());
+            }
+        }
+    }
+
+    private static void handleToggleExempt(ServerboundAdminToggleExemptPayload payload, IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        MinecraftServer server = admin.server;
+        WarState st = WarState.get(server);
+        boolean now = !st.isExempt(payload.target());
+        st.setExempt(payload.target(), now);
+        WarEngine.LOGGER.info("[admin] {} set exempt={} for {}",
+                admin.getGameProfile().getName(), now, resolveName(server, payload.target()));
+        ServerPlayer target = server.getPlayerList().getPlayer(payload.target());
+        if (target != null) {
+            target.displayClientMessage(Component.literal(now ? "Admin mode on" : "Admin mode off")
+                    .withStyle(ChatFormatting.GRAY), true);
+        }
+        PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
+    }
+
+    private static void handleToggleRole(ServerboundAdminToggleRolePayload payload, IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        MinecraftServer server = admin.server;
+        ServerPlayer target = server.getPlayerList().getPlayer(payload.target());
+        // The role is stamped with a team, so it needs the player online to know which team that is.
+        String team = target == null ? null : TeamService.getTeam(server, target);
+        if (team == null) {
+            admin.displayClientMessage(Component.literal("That player needs a team first")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        WarState st = WarState.get(server);
+        boolean commander = ServerboundAdminToggleRolePayload.COMMANDER.equals(payload.role());
+        boolean leader = ServerboundAdminToggleRolePayload.LEADER.equals(payload.role());
+        if (!commander && !leader) {
+            return;
+        }
+        String current = commander ? st.getCommanderOf(payload.target()) : st.getLeaderOf(payload.target());
+        String next = team.equalsIgnoreCase(current == null ? "" : current) ? null : team;
+        if (commander) {
+            st.setCommanderOf(payload.target(), next);
+        } else {
+            st.setLeaderOf(payload.target(), next);
+        }
+        WarEngine.LOGGER.info("[admin] {} set {}={} for {} on team {}",
+                admin.getGameProfile().getName(), payload.role(), next != null,
+                target.getGameProfile().getName(), team);
+        target.displayClientMessage(Component.literal(
+                        (commander ? "Commander" : "Squad leader") + (next != null ? " ON" : " OFF"))
+                .withStyle(next != null ? ChatFormatting.GOLD : ChatFormatting.GRAY), true);
+        // The role decides canCreate/canEdit, both of which ride on the squad payloads - without these
+        // the target's Create button never ungreys and the Manage button never appears.
+        SquadNetworking.sendSquadState(target);
+        SquadNetworking.sendSquadListToTeam(server, team);
+        PacketDistributor.sendToPlayer(admin, buildTeamsSnapshot(server));
+    }
+
+    private static void handleToggleKeepInBase(IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        MinecraftServer server = admin.server;
+        WarState st = WarState.get(server);
+        boolean now = !st.keepInBase();
+        st.setKeepInBase(now);
+        WarEngine.LOGGER.info("[admin] {} turned the base lock {}", admin.getGameProfile().getName(),
+                now ? "ON" : "OFF");
+        server.getPlayerList().broadcastSystemMessage(Component.literal(now ? "Base lock ON" : "Base lock OFF")
+                .withStyle(now ? ChatFormatting.RED : ChatFormatting.GRAY), false);
+        PacketDistributor.sendToPlayer(admin, buildSnapshot(server));
+    }
+
+    private static void handleBulkScarce(ServerboundAdminBulkScarcePayload payload, IPayloadContext context) {
+        ServerPlayer admin = opPlayerOrNull(context);
+        if (admin == null) {
+            return;
+        }
+        try {
+            int changed = ScarceItems.applyBulk(payload.scarce(), payload.notScarce(), admin.server);
+            WarEngine.LOGGER.info("[admin] {} bulk-edited the scarce list: {} change(s), now {} item(s)",
+                    admin.getGameProfile().getName(), changed, ScarceItems.all().size());
+        } catch (IOException e) {
+            WarEngine.LOGGER.error("[admin] bulk scarce edit failed", e);
+        }
+        PacketDistributor.sendToPlayer(admin, buildScarceSnapshot());
     }
 
     public static ClientboundAdminBudgetSnapshotPayload buildBudgetSnapshot(MinecraftServer server) {

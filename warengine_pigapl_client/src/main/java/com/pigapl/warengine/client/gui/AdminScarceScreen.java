@@ -39,6 +39,9 @@ public final class AdminScarceScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Mark item in my hand"),
                         b -> PacketDistributor.sendToServer(new ServerboundAdminMarkHeldScarcePayload()))
                 .bounds(width - 20 - 160, height - 26, 160, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Mark several..."),
+                        b -> Minecraft.getInstance().setScreen(new AdminScarceBulkScreen(this)))
+                .bounds(width - 20 - 160 - 124, height - 26, 120, 20).build());
 
         ClientboundAdminScarceSnapshotPayload snap = ClientAdminCache.scarceSnapshot();
         List<ItemStack> items = snap == null ? List.of() : snap.items();
@@ -87,7 +90,7 @@ public final class AdminScarceScreen extends Screen {
         }
         List<ItemStack> items = snap.items();
         if (items.isEmpty()) {
-            graphics.drawString(font, "No scarce items marked - hold one and click \"Mark item in my hand\".",
+            graphics.drawString(font, "No scarce items marked - hold one and click \"Mark item in my hand\", or use \"Mark several...\".",
                     left + 6, top + 6, PickerLayout.HINT_COLOR);
             return;
         }

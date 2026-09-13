@@ -4,6 +4,7 @@ import com.pigapl.warengine.kit.KitService;
 import com.pigapl.warengine.kit.KitStorage;
 import com.pigapl.warengine.kit.TeamKits;
 import com.pigapl.warengine.state.WarState;
+import com.pigapl.warengine.team.RoleService;
 import com.pigapl.warengine.team.TeamService;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -28,7 +29,7 @@ public final class SquadService {
 
     private SquadService() {}
 
-    public enum CreateResult { OK, NO_TEAM, BLANK_NAME, NAME_TOO_LONG, BAD_LIMIT, BUDGET_EXCEEDED }
+    public enum CreateResult { OK, NO_TEAM, BLANK_NAME, NAME_TOO_LONG, BAD_LIMIT, BUDGET_EXCEEDED, NOT_ALLOWED }
     public enum JoinResult { OK, UNKNOWN_SQUAD, WRONG_TEAM, FULL }
     public enum UpdateResult { OK, UNKNOWN_SQUAD, BLANK_NAME, NAME_TOO_LONG, BAD_LIMIT, NO_BUDGET, BUDGET_EXCEEDED }
 
@@ -102,6 +103,10 @@ public final class SquadService {
         if (team == null) {
             return CreateResult.NO_TEAM;
         }
+        // Founding a squad claims team budget - see RoleService for why this is gated at all.
+        if (!RoleService.canCreateSquad(server, player)) {
+            return CreateResult.NOT_ALLOWED;
+        }
         String name = rawName == null ? "" : rawName.trim();
         if (name.isEmpty()) {
             return CreateResult.BLANK_NAME;
@@ -138,7 +143,25 @@ public final class SquadService {
         WarState st = WarState.get(server);
         WarState.SquadRecord record = st.createSquad(team, name, limit, clean);
         st.setSquad(player.getUUID(), record.id);
+        // A commander founding a squad leaves it leaderless on purpose - they appoint someone into it.
+        if (!RoleService.isCommander(server, player)) {
+            st.setSquadLeader(record.id, player.getUUID());
+        }
         return CreateResult.OK;
+    }
+
+    /**
+     * Makes {@code member} the leader of {@code squadId}. Commander-only at the call sites; this just
+     * checks the member is actually in the squad, so a stale screen cannot appoint an outsider.
+     */
+    public static UpdateResult setLeader(MinecraftServer server, String squadId, java.util.UUID member) {
+        WarState st = WarState.get(server);
+        WarState.SquadRecord squad = st.getSquadRecord(squadId);
+        if (squad == null || !squadId.equals(st.getSquad(member))) {
+            return UpdateResult.UNKNOWN_SQUAD;
+        }
+        st.setSquadLeader(squadId, member);
+        return UpdateResult.OK;
     }
 
     /** {@code BUDGET_EXCEEDED} counts the new value plus what the team's OTHER squads already hold. */
@@ -176,7 +199,13 @@ public final class SquadService {
             return JoinResult.WRONG_TEAM;
         }
         boolean alreadyIn = record.id.equals(st.getSquad(player.getUUID()));
-        if (!alreadyIn && record.limit > 0 && memberCount(server, record.id) >= record.limit) {
+        if (alreadyIn) {
+            // Re-picking your own squad must be a no-op. It used to fall through to leave() + setSquad(),
+            // and leave() DELETES a squad whose last member just walked out - so the only member
+            // re-selecting their own squad destroyed it and stayed pointed at the dead id.
+            return JoinResult.OK;
+        }
+        if (record.limit > 0 && memberCount(server, record.id) >= record.limit) {
             return JoinResult.FULL;
         }
         leave(player);
